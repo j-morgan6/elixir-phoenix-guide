@@ -490,3 +490,7 @@ end)
 # 6. Restart server to apply changes
 mix phx.server
 ```
+
+## Testing
+
+When writing tests for file upload functionality, invoke `elixir-phoenix-guide:testing-essentials` before writing any `_test.exs` file.

@@ -441,6 +441,10 @@ new_list = [0 | list]  # [0, 1, 2, 3]
 # list is still [1, 2, 3]
 ```
 
+## Testing
+
+When writing test files for Elixir modules, invoke `elixir-phoenix-guide:testing-essentials` before writing any `_test.exs` file.
+
 ## Anonymous Functions
 
 Use the capture operator `&` for concise anonymous functions.

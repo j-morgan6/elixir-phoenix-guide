@@ -378,29 +378,9 @@ def handle_info({:post_created, post}, socket) do
 end
 ```
 
-## Testing LiveViews
+## Testing
 
-Use `Phoenix.LiveViewTest` for testing.
-
-```elixir
-test "creates post successfully", %{conn: conn} do
-  {:ok, lv, _html} = live(conn, "/posts/new")
-
-  lv
-  |> form("#post-form", post: %{title: "Test", body: "Content"})
-  |> render_submit()
-
-  assert has_element?(lv, "p", "Saved successfully")
-end
-
-test "initializes assigns in mount", %{conn: conn} do
-  {:ok, view, _html} = live(conn, "/page")
-
-  # Check assigns are set
-  assert view.assigns.count == 0
-  assert view.assigns.user != nil
-end
-```
+When writing LiveView tests, invoke `elixir-phoenix-guide:testing-essentials` before writing any `_test.exs` file.
 
 ## Common Lifecycle Mistakes
 

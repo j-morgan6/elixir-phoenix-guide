@@ -403,3 +403,7 @@ defmodule MyApp.Media do
   end
 end
 ```
+
+## Testing
+
+When writing tests for Ecto schemas, changesets, or contexts, invoke `elixir-phoenix-guide:testing-essentials` before writing any `_test.exs` file.

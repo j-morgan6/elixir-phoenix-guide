@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning.
 
+## [1.3.0] - 2026-02-22
+
+### Added
+- **`testing-essentials` skill** — proactive testing guidance invoked before any `_test.exs` file:
+  - 8 non-negotiable RULES covering setup (DataCase/ConnCase), coverage, and assertion patterns
+  - Light TDD guidance: write failing test first, implement until it passes
+  - Quick pattern reference: DataCase/ConnCase setup, fixture skeleton, LiveView and context test skeletons
+  - Pointer to `testing-guide.md` for comprehensive examples
+
+### Changed
+- **`testing-guide.md` refactored** into a deep reference companion:
+  - Added header pointing to `testing-essentials` skill
+  - Removed DataCase/ConnCase setup templates (now in skill)
+  - Retained all detailed code examples
+- **All 4 existing skills updated** with pointers to `testing-essentials` for test files:
+  - `elixir-essentials`, `phoenix-liveview-essentials` (replaced testing section), `ecto-essentials`, `phoenix-uploads`
+
+### Impact
+- Plugin now provides complete testing guidance without relying on external plugins
+- No duplication between skill and agent doc
+- Testing skill surfaced automatically when any `_test.exs` file is written
+
 ## [1.2.0] - 2026-02-12
 
 ### Breaking Changes
@@ -143,7 +165,9 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
-| v1.1.0 | Pending | Skill discoverability improvements - 8 skills, forcing language, file patterns |
+| v1.3.0 | 2026-02-22 | Testing skill — testing-essentials + agent doc refactor |
+| v1.2.0 | 2026-02-12 | Consolidation & enforcement — 4 skills, RULES sections, MANDATORY language |
+| v1.1.0 | 2026-02-09 | Skill discoverability — forcing language, file patterns, skill-discovery meta-skill |
 | v1.0.0 | 2026-01-26 | Initial release with 7 skills, 10 hooks, and 4 agent docs |
 
 ---
@@ -198,7 +222,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.1.2...v1.2.0
 [1.1.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/j-morgan6/elixir-phoenix-guide/releases/tag/v1.0.0

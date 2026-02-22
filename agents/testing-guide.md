@@ -1,10 +1,12 @@
 # Testing Guide for Elixir/Phoenix
 
+> **Reference companion to `elixir-phoenix-guide:testing-essentials`** — invoke the skill before writing any test file. This doc provides detailed examples; the skill provides the rules and workflow.
+
 ## Test Structure
 
 ```elixir
 defmodule MyApp.MediaTest do
-  use MyApp.DataCase  # For tests that use the database
+  use MyApp.DataCase, async: true
 
   alias MyApp.Media
 
@@ -18,54 +20,6 @@ defmodule MyApp.MediaTest do
       attrs = valid_image_attributes()
       assert {:ok, %Image{} = image} = Media.create_image(attrs)
       assert image.title == attrs.title
-    end
-  end
-end
-```
-
-## Test Cases
-
-### DataCase
-
-Use `DataCase` for tests that interact with the database:
-
-```elixir
-defmodule MyApp.DataCase do
-  use ExUnit.CaseTemplate
-
-  using do
-    quote do
-      alias MyApp.Repo
-      import Ecto
-      import Ecto.Changeset
-      import Ecto.Query
-      import MyApp.DataCase
-    end
-  end
-
-  setup tags do
-    MyApp.DataCase.setup_sandbox(tags)
-    :ok
-  end
-end
-```
-
-### ConnCase
-
-Use `ConnCase` for controller tests:
-
-```elixir
-defmodule MyAppWeb.ConnCase do
-  use ExUnit.CaseTemplate
-
-  using do
-    quote do
-      import Plug.Conn
-      import Phoenix.ConnTest
-      import MyAppWeb.ConnCase
-
-      alias MyAppWeb.Router.Helpers, as: Routes
-      @endpoint MyAppWeb.Endpoint
     end
   end
 end

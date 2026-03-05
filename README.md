@@ -4,7 +4,7 @@
 
 An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, hooks, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v1.3.0 Released!** New `testing-essentials` skill added — proactive testing guidance for all `_test.exs` files. All existing skills now point to it. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v1.3.1 Released!** LiveView rules for core components and DB query boundaries, plus template refinements. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 
@@ -65,7 +65,7 @@ In a Claude Code session, use the interactive plugin manager:
 # - Select the elixir-phoenix-guide marketplace
 # - Install the elixir-phoenix-guide plugin
 # - Choose scope (user = all projects, project = current only)
-# - Verify you have version 1.3.0 or higher
+# - Verify you have version 1.3.1 or higher
 ```
 
 ### Updating to Latest Version
@@ -78,13 +78,12 @@ If you already have the plugin installed:
 
 # Select "Marketplaces" → "elixir-phoenix-guide" → "Update"
 # Then update the plugin from the menu
-# Verify version shows 1.3.0 or higher
+# Verify version shows 1.3.1 or higher
 ```
 
-**Latest Updates (v1.3.0):**
-- New **testing-essentials** skill for all `_test.exs` files
-- All 4 existing skills now point to `testing-essentials` for test files
-- `testing-guide.md` refactored as a deep reference companion to the skill
+**Latest Updates (v1.3.1):**
+- LiveView rules for core components and DB query boundaries
+- Template refinements across skills
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
@@ -217,7 +216,7 @@ In a Claude Code session:
 /plugin
 
 # Or check version in the plugin list
-# Navigate to your installed plugins and verify version 1.3.0 or higher
+# Navigate to your installed plugins and verify version 1.3.1 or higher
 ```
 
 ## Uninstall

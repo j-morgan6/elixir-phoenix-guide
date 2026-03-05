@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning.
 
+## [1.3.1] - 2026-03-04
+
+### Added
+- **`phoenix-liveview-essentials`** — 2 new rules:
+  - Rule #8: Check `core_components.ex` for existing components before creating custom ones
+  - Rule #9: Never query the database directly from LiveViews — call context functions instead
+- **`CLAUDE.md.template`** — HexDocs MCP note added to "Notes for Claude" section
+
 ## [1.3.0] - 2026-02-22
 
 ### Added
@@ -222,7 +230,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.1.2...v1.2.0
 [1.1.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.0.0...v1.1.0

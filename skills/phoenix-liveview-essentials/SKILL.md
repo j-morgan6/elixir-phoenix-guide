@@ -20,6 +20,8 @@ auto_suggest: true
 5. **Return proper tuples** — `{:ok, socket}` from mount, `{:noreply, socket}` from handle_event
 6. **Use `with` for error handling** in event handlers — assign errors to socket, don't crash
 7. **Never use auto_upload: true with form submission** — use manual uploads instead
+8. **Check `core_components.ex` for existing components** before creating custom ones
+9. **Never query the database directly from LiveViews** — call context functions instead
 
 ---
 

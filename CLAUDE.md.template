@@ -173,6 +173,7 @@ mix test           # Run tests
 - Reference agent docs when you need detailed information about specific areas
 - Trust the hooks - if they warn/block, there's usually a better Elixir pattern
 - Skills provide quick reference for common patterns
+- Use HexDocs MCP to look up dependency documentation (if configured)
 - When in doubt, prefer pattern matching, explicit returns, and simple solutions
 - Test coverage is important - write tests for new features
 - Don't add features beyond what's requested - keep it simple

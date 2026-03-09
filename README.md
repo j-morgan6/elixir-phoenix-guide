@@ -221,6 +221,18 @@ In a Claude Code session:
 # Navigate to your installed plugins and verify version 1.3.2 or higher
 ```
 
+## Troubleshooting
+
+### Plugin shows old version after update
+
+The `/plugin` update command may not refresh its local cache automatically. If the version shown doesn't match the latest release, run:
+
+```bash
+cd ~/.claude/plugins/marketplaces/elixir-phoenix-guide && git pull
+```
+
+Then re-run `/plugin` and update the plugin from the menu.
+
 ## Uninstall
 
 In a Claude Code session:

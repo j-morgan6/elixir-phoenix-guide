@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning.
 
+## [1.3.2] - 2026-03-08
+
+### Changed
+- **`testing-essentials`** — 4 targeted refinements:
+  - **Setup Chaining section** — guidance on composing named setup functions with `setup [:func1, :func2]` for reusable test context
+  - **Timestamp Testing section** — guidance on relative timestamps instead of hardcoded dates that cause flaky tests
+  - **Refined `async: true` rule** — replaced one-liner with safe/unsafe categorization (safe: pure functions, changesets, helpers; unsafe: DB contexts, LiveView, `Application.put_env`)
+  - **Improved Context Test Skeleton** — result bound to variable for further assertions, error case pattern matches changeset and checks `errors_on/1`
+
 ## [1.3.1] - 2026-03-04
 
 ### Added
@@ -173,6 +182,8 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v1.3.2 | 2026-03-08 | Testing essentials refinements — setup chaining, timestamps, async, skeletons |
+| v1.3.1 | 2026-03-04 | LiveView rules + template refinements |
 | v1.3.0 | 2026-02-22 | Testing skill — testing-essentials + agent doc refactor |
 | v1.2.0 | 2026-02-12 | Consolidation & enforcement — 4 skills, RULES sections, MANDATORY language |
 | v1.1.0 | 2026-02-09 | Skill discoverability — forcing language, file patterns, skill-discovery meta-skill |
@@ -230,7 +241,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.1.2...v1.2.0

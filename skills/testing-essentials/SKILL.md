@@ -13,7 +13,7 @@ auto_suggest: true
 
 1. **Use `DataCase` for database tests, `ConnCase` for LiveView/controller tests** — never mix them
 2. **Test both happy path AND error/invalid cases** for every function
-3. **Use `async: true` only when tests don't touch shared state** or external services
+3. **Use `async: true` only when safe** — safe: pure functions, changesets, helpers; unsafe: DB contexts with shared rows, LiveView, `Application.put_env`, external services
 4. **Define test data in fixtures** (`test/support/`) — never build it inline across multiple tests
 5. **Use `has_element?/2` and `element/2` for LiveView assertions** — not `html =~ "text"` for structure checks
 6. **Always test the unauthorized case** for any protected resource
@@ -87,11 +87,13 @@ end
 ```elixir
 describe "create_post/1" do
   test "with valid attrs creates a post" do
-    assert {:ok, %Post{title: "Hello"}} = Blog.create_post(%{title: "Hello"})
+    assert {:ok, %Post{} = post} = Blog.create_post(%{title: "Hello"})
+    assert post.title == "Hello"
   end
 
   test "with invalid attrs returns error changeset" do
-    assert {:error, %Ecto.Changeset{}} = Blog.create_post(%{})
+    assert {:error, %Ecto.Changeset{} = changeset} = Blog.create_post(%{})
+    assert %{title: ["can't be blank"]} = errors_on(changeset)
   end
 end
 ```
@@ -152,6 +154,56 @@ describe "changeset/2" do
     assert %{title: ["can't be blank"]} = errors_on(changeset)
   end
 end
+```
+
+---
+
+## Setup Chaining
+
+Compose reusable setup functions with `setup [:func1, :func2]`. Each function receives and returns a context map.
+
+```elixir
+defmodule MyAppWeb.PostLiveTest do
+  use MyAppWeb.ConnCase, async: true
+
+  import MyApp.AccountsFixtures
+  import MyApp.BlogFixtures
+
+  setup [:register_and_log_in_user, :create_post]
+
+  test "owner can edit post", %{conn: conn, post: post} do
+    {:ok, lv, _html} = live(conn, ~p"/posts/#{post}/edit")
+    assert has_element?(lv, "#post-form")
+  end
+
+  defp create_post(%{user: user}) do
+    %{post: post_fixture(user_id: user.id)}
+  end
+end
+```
+
+Chain order matters — later functions receive assigns from earlier ones.
+
+---
+
+## Timestamp Testing
+
+Never hardcode dates — use relative timestamps to prevent flaky tests as time passes.
+
+```elixir
+# Bad — breaks after 2026
+assert post.published_at == ~U[2026-01-15 12:00:00Z]
+
+# Good — relative to now
+now = DateTime.utc_now(:second)
+assert DateTime.diff(post.inserted_at, now, :second) < 5
+
+# Good — build relative dates for filtering/sorting
+past = DateTime.add(DateTime.utc_now(:second), -7, :day)
+future = DateTime.add(DateTime.utc_now(:second), 7, :day)
+old_post = post_fixture(published_at: past)
+new_post = post_fixture(published_at: future)
+assert Blog.list_published_posts() == [old_post]
 ```
 
 ---

@@ -2,6 +2,16 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); if echo \"$INPUT\" | grep -qE 'mix\\s+ecto\\.reset'; then echo '🚫 Dangerous: mix ecto.reset destroys and recreates the database. Use mix ecto.rollback for safe rollbacks.' && exit 2; fi; if echo \"$INPUT\" | grep -qE 'git\\s+push\\s+.*(-f|--force)'; then echo '🚫 Dangerous: Force push overwrites remote history. Use --force-with-lease for safer force pushes.' && exit 2; fi; if echo \"$INPUT\" | grep -qE 'MIX_ENV=prod'; then echo '🚫 Dangerous: Running with MIX_ENV=prod locally risks unintended production effects.' && exit 2; fi",
+            "description": "Block dangerous operations (ecto.reset, force push, MIX_ENV=prod)"
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {
@@ -53,6 +63,16 @@
             "type": "command",
             "command": "if grep -qE 'auto_upload:\\s*true' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  auto_upload: true detected. This requires special handling with handle_progress/3. Most apps should use manual upload (remove auto_upload: true and add a submit button). See phoenix-uploads skill for details.' && exit 1; fi",
             "description": "Warn on auto_upload usage"
+          },
+          {
+            "type": "command",
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" = \"ex\" ] || [ \"$EXT\" = \"exs\" ]; then if ! echo \"$CLAUDE_HOOK_FILE_PATH\" | grep -qE '_test\\.exs$|/test/'; then if grep -qE 'IO\\.inspect\\(|dbg\\(|IO\\.puts\\(' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  Debug statement detected (IO.inspect, dbg, or IO.puts). Remove before committing — these should not reach production.' && exit 1; fi; fi; fi",
+            "description": "Warn on debug statements outside test files (IO.inspect, dbg, IO.puts)"
+          },
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_HOOK_FILE_PATH\" | grep -qE 'mix\\.exs$'; then echo '💡 Dependencies file (mix.exs) modified. Consider running:'; echo '   mix deps.audit  - check for known vulnerabilities'; echo '   mix hex.audit   - verify package checksums'; echo '   mix sobelow     - static security analysis'; exit 0; fi",
+            "description": "Remind about security auditing when mix.exs is modified"
           }
         ]
       }

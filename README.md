@@ -1,26 +1,28 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 1.3.2 | [Changelog](CHANGELOG.md)
+**Version:** 1.4.0 | [Changelog](CHANGELOG.md)
 
 An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, hooks, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v1.3.2 Released!** Testing essentials refinements — setup chaining, timestamp testing, async safety, improved skeletons. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v1.4.0 Released!** New OTP and Oban skills, dangerous operation blocking, debug statement detection, security audit reminders, and subagent rules injection. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 
-### Skills (5 essential files)
+### Skills (7 essential files)
 Consolidated domain expertise with enforced patterns:
 - **elixir-essentials** - Core Elixir patterns: pattern matching, pipes, with statements, error handling
 - **phoenix-liveview-essentials** - Complete LiveView guide: lifecycle, events, rendering phases, state management
 - **ecto-essentials** - Database operations: schemas, changesets, queries, migrations, associations
 - **phoenix-uploads** - File uploads and static file serving workflow
 - **testing-essentials** - Testing patterns: DataCase/ConnCase setup, fixtures, LiveView tests, TDD workflow
+- **otp-essentials** - OTP patterns: GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry, ETS
+- **oban-essentials** - Background jobs: workers, queues, idempotency, unique jobs, cron, testing with Oban.Testing
 
-Each skill includes a RULES section with 7-8 non-negotiable patterns that must be followed.
+Each skill includes a RULES section with 7-9 non-negotiable patterns that must be followed.
 
 **Note on auto_suggest metadata:** Skills include `auto_suggest: true` and `file_patterns` metadata for future Claude Code enhancements. These fields are not currently active in the Claude Code runtime but are included for forward compatibility.
 
-### Hooks (10 shell commands in settings.json)
+### Hooks (13 shell commands in settings.json)
 Active enforcement rules that catch anti-patterns in real-time:
 
 **Blocking (exit 2 - prevents action):**
@@ -29,12 +31,20 @@ Active enforcement rules that catch anti-patterns in real-time:
 - **hardcoded-sizes** - Blocks hardcoded file size limits
 - **static-paths-validator** - Blocks file references not in static_paths()
 - **deprecated-components** - Blocks deprecated Phoenix components (.flash_group, form_for, live_redirect)
-1
+- **dangerous-operations** - Blocks mix ecto.reset, git push --force, MIX_ENV=prod
+
 **Warnings (exit 1 - shows warning, allows action):**
 - **nested-if-else** - Warns about nested if/else, suggests pattern matching
 - **inefficient-enum** - Warns about multiple Enum operations
 - **string-concatenation** - Warns about string concatenation in loops
 - **auto-upload-warning** - Warns when auto_upload: true is detected
+- **debug-statements** - Warns on IO.inspect, dbg(), IO.puts outside test files
+
+**Reminders (exit 0 - non-blocking nudge):**
+- **security-audit** - Suggests mix deps.audit/hex.audit/sobelow when mix.exs changes
+
+### Subagent Enforcement
+- **SubagentStart hook** - Injects condensed rules from all 7 skills into every spawned subagent, ensuring code written by subagents follows the same standards
 
 ### Agent Documentation (4 files)
 Detailed reference material for complex tasks:
@@ -65,7 +75,7 @@ In a Claude Code session, use the interactive plugin manager:
 # - Select the elixir-phoenix-guide marketplace
 # - Install the elixir-phoenix-guide plugin
 # - Choose scope (user = all projects, project = current only)
-# - Verify you have version 1.3.2 or higher
+# - Verify you have version 1.4.0 or higher
 ```
 
 ### Updating to Latest Version
@@ -78,14 +88,13 @@ If you already have the plugin installed:
 
 # Select "Marketplaces" → "elixir-phoenix-guide" → "Update"
 # Then update the plugin from the menu
-# Verify version shows 1.3.2 or higher
+# Verify version shows 1.4.0 or higher
 ```
 
-**Latest Updates (v1.3.2):**
-- Setup chaining guidance for reusable test contexts
-- Timestamp testing patterns to prevent flaky tests
-- Refined async: true rule with safe/unsafe categorization
-- Improved context test skeleton with result binding and error assertions
+**Latest Updates (v1.4.0):**
+- 2 new skills: otp-essentials (GenServer, Supervisor, Task) and oban-essentials (workers, queues, testing)
+- 3 new hooks: dangerous operations blocker, debug statement detector, security audit reminder
+- SubagentStart hook injects rules into all spawned subagents
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
@@ -176,12 +185,14 @@ This file will be automatically loaded by Claude Code when working in your proje
 ```
 elixir-phoenix-guide/
 ├── README.md                          # This file
-├── skills/                            # Elixir expertise (5 essential skills)
+├── skills/                            # Elixir expertise (7 essential skills)
 │   ├── elixir-essentials/SKILL.md
 │   ├── phoenix-liveview-essentials/SKILL.md
 │   ├── ecto-essentials/SKILL.md
 │   ├── phoenix-uploads/SKILL.md
-│   └── testing-essentials/SKILL.md
+│   ├── testing-essentials/SKILL.md
+│   ├── otp-essentials/SKILL.md
+│   └── oban-essentials/SKILL.md
 ├── hooks-settings.json                # Hook configuration
 └── agents/                            # Reference documentation
     ├── project-structure.md
@@ -218,7 +229,7 @@ In a Claude Code session:
 /plugin
 
 # Or check version in the plugin list
-# Navigate to your installed plugins and verify version 1.3.2 or higher
+# Navigate to your installed plugins and verify version 1.4.0 or higher
 ```
 
 ## Troubleshooting

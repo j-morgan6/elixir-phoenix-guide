@@ -71,6 +71,8 @@ skill from the elixir-phoenix-guide plugin:
 - **Working with LiveView or templates (.heex)** → invoke `elixir-phoenix-guide:phoenix-liveview-essentials`
 - **Database work (schemas, migrations, queries)** → invoke `elixir-phoenix-guide:ecto-essentials`
 - **File uploads** → invoke `elixir-phoenix-guide:phoenix-uploads`
+- **OTP (GenServer, Supervisor, Task)** → invoke `elixir-phoenix-guide:otp-essentials`
+- **Background jobs (Oban workers)** → invoke `elixir-phoenix-guide:oban-essentials`
 
 This is not optional. Do not rationalize skipping this step. Invoke the skill, read the
 rules section, then proceed with implementation.
@@ -118,6 +120,9 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 2. **phoenix-liveview-essentials** - LiveView lifecycle, events, rendering phases, navigation
 3. **ecto-essentials** - Schemas, changesets, queries, migrations, associations
 4. **phoenix-uploads** - File uploads and static file serving
+5. **otp-essentials** - GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry
+6. **oban-essentials** - Background jobs, workers, queues, idempotency, Oban.Testing
+7. **testing-essentials** - DataCase/ConnCase, fixtures, LiveView tests, TDD workflow
 
 ## Hooks
 

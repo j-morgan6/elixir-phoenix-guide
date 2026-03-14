@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning.
 
+## [1.4.0] - 2026-03-13
+
+### Added
+- **`otp-essentials` skill** — 7 RULES covering GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry, ETS, and common OTP anti-patterns
+- **`oban-essentials` skill** — 7 RULES covering workers, queues, idempotency, unique jobs, cron scheduling, testing with Oban.Testing, and error handling
+- **`dangerous-operations-blocker` hook** (Bash, exit 2) — blocks `mix ecto.reset`, `git push --force`, and `MIX_ENV=prod` commands
+- **`debug-statement-detector` hook** (Write/Edit, exit 1) — warns on `IO.inspect`, `dbg()`, `IO.puts` outside test files
+- **`security-audit-reminder` hook** (Write/Edit, exit 0) — nudges `mix deps.audit` / `hex.audit` / `sobelow` when `mix.exs` is modified
+- **SubagentStart hook** — injects condensed rules from all 7 skills into every spawned subagent
+
+### Impact
+- Skill count: 5 → 7 (OTP and Oban coverage fills the biggest domain gaps)
+- Hook count: 10 → 13 (first Bash-level hook, first PostToolUse-style detection)
+- Subagent enforcement: code written by subagents now follows the same rules as the main conversation
+- Motivated by competitive analysis of oliver-kriska/claude-elixir-phoenix (v2.3.1)
+
 ## [1.3.2] - 2026-03-08
 
 ### Changed
@@ -182,6 +198,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v1.4.0 | 2026-03-13 | Competitive parity — OTP skill, Oban skill, 3 new hooks, subagent enforcement |
 | v1.3.2 | 2026-03-08 | Testing essentials refinements — setup chaining, timestamps, async, skeletons |
 | v1.3.1 | 2026-03-04 | LiveView rules + template refinements |
 | v1.3.0 | 2026-02-22 | Testing skill — testing-essentials + agent doc refactor |
@@ -241,7 +258,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.2.0...v1.3.0

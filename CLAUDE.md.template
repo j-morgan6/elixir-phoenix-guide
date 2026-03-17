@@ -73,6 +73,8 @@ skill from the elixir-phoenix-guide plugin:
 - **File uploads** → invoke `elixir-phoenix-guide:phoenix-uploads`
 - **OTP (GenServer, Supervisor, Task)** → invoke `elixir-phoenix-guide:otp-essentials`
 - **Background jobs (Oban workers)** → invoke `elixir-phoenix-guide:oban-essentials`
+- **Writing tests (_test.exs)** → invoke `elixir-phoenix-guide:testing-essentials`
+- **Refactoring or analyzing code quality** → invoke `elixir-phoenix-guide:code-quality`
 
 This is not optional. Do not rationalize skipping this step. Invoke the skill, read the
 rules section, then proceed with implementation.
@@ -123,6 +125,7 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 5. **otp-essentials** - GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry
 6. **oban-essentials** - Background jobs, workers, queues, idempotency, Oban.Testing
 7. **testing-essentials** - DataCase/ConnCase, fixtures, LiveView tests, TDD workflow
+8. **code-quality** - Automated duplication, complexity, and unused function detection
 
 ## Hooks
 
@@ -133,8 +136,20 @@ Hooks actively enforce code quality:
 - **inefficient-enum** - Warns about multiple Enum passes (use for comprehensions)
 - **missing-impl** - Blocks callbacks without @impl true
 - **string-concatenation** - Warns about <> in loops (use IO lists)
+- **code-quality-analysis** - After write: detects duplication, complexity, unused functions
 
 If a hook triggers, follow its suggestion. Hooks catch common Elixir anti-patterns.
+
+## Code Quality Automation
+
+PostToolUse hooks automatically analyze files after they're written:
+- **Elixir files** (.ex/.exs): duplication, ABC complexity, unused private functions
+- **HEEx templates** (.heex): template markup duplication
+
+For full project analysis:
+```bash
+bash ~/.claude/scripts/elixir-phoenix-guide/run_analysis.sh
+```
 
 ## Development Workflow
 

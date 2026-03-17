@@ -8,10 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Automated code quality detection system (v2.0.0)
 - Additional skills and hooks (v2.1.0)
+- Smart enforcement with context-aware hooks (v2.2.0)
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning.
+
+## [2.0.0] - 2026-03-16
+
+### Added
+- **`code-quality` skill** — 7 RULES covering code duplication, ABC complexity, unused functions, template duplication, and refactoring guidance
+- **PostToolUse code quality hook** (Write/Edit) — automatically analyzes files after they're written:
+  - `.ex`/`.exs` files: duplication detection, ABC complexity analysis, unused private function detection
+  - `.heex` files: template duplication detection
+- **`code_quality.exs` script** — AST-based Elixir analysis engine:
+  - **Code duplication detection** — parses function bodies using `Macro.to_string/1`, compares with trigram similarity, flags matches >70% across sibling modules
+  - **ABC complexity analyzer** — counts Assignments (`=`), Branches (`case`, `cond`, `if`, `with`, `->`), Conditions (`&&`, `||`, `==`, `when`, etc.), flags functions with ABC > 30
+  - **Unused function detection** — finds `defp` functions never called within their module
+  - Supports single-file analysis (`all <file>`) and full project scan (`scan <directory>`)
+- **`detect_template_duplication.sh` script** — detects HEEx templates sharing >40% identical markup in the same directory
+- **`run_analysis.sh` script** — full project analysis runner combining all checks
+
+### Changed
+- **Skill count:** 7 → 8 (new code-quality skill)
+- **Hook count:** 13 → 14 (new PostToolUse code quality analyzer)
+- **install.sh** — now installs analysis scripts to `~/.claude/scripts/elixir-phoenix-guide/`
+- **CLAUDE.md.template** — updated with code-quality skill reference and automation section
+- **SubagentStart hook** — updated to reference 8 skills
+
+### Impact
+- Major version bump: first automation features that go beyond skill/hook guidance
+- Based on analysis showing ~500+ lines of duplicated code eliminated through systematic refactoring in real Phoenix projects
+- PostToolUse hooks provide real-time feedback after every file write without blocking the action
+- On-demand full project scanning via `run_analysis.sh` for CI/CD integration
 
 ## [1.4.0] - 2026-03-13
 
@@ -198,6 +226,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.0.0 | 2026-03-16 | Automation — code duplication, complexity, unused functions, template duplication |
 | v1.4.0 | 2026-03-13 | Competitive parity — OTP skill, Oban skill, 3 new hooks, subagent enforcement |
 | v1.3.2 | 2026-03-08 | Testing essentials refinements — setup chaining, timestamps, async, skeletons |
 | v1.3.1 | 2026-03-04 | LiveView rules + template refinements |
@@ -236,16 +265,6 @@ Install using any of the three methods in README.md. No migration needed.
 - `ecto-changeset-patterns` - cast_assoc, conditional validation
 - `phoenix-auth-customization` - Extending phx.gen.auth
 
-### v2.0.0 - Automation: Code Quality Detection
-**Target:** Month 2 after v1.0.0
-**Focus:** Automated detection of code quality issues
-
-**Planned Features:**
-- Code duplication detection system
-- Template duplication detection
-- ABC complexity analyzer
-- Unused function detection
-
 ### v2.1.0 - Polish: Additional Skills & Hooks
 **Target:** Month 3 after v1.0.0
 **Focus:** Additional patterns and refinements
@@ -258,7 +277,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.0...v1.3.1

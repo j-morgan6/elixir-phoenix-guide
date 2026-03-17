@@ -1,14 +1,14 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 1.4.0 | [Changelog](CHANGELOG.md)
+**Version:** 2.0.0 | [Changelog](CHANGELOG.md)
 
-An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, hooks, and agent documentation that actively guide and validate your Elixir development workflow.
+An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, hooks, automated code quality analysis, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v1.4.0 Released!** New OTP and Oban skills, dangerous operation blocking, debug statement detection, security audit reminders, and subagent rules injection. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v2.0.0 Released!** Automated code quality detection — duplication detection, ABC complexity analysis, unused function detection, and template duplication analysis. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 
-### Skills (7 essential files)
+### Skills (8 essential files)
 Consolidated domain expertise with enforced patterns:
 - **elixir-essentials** - Core Elixir patterns: pattern matching, pipes, with statements, error handling
 - **phoenix-liveview-essentials** - Complete LiveView guide: lifecycle, events, rendering phases, state management
@@ -17,12 +17,13 @@ Consolidated domain expertise with enforced patterns:
 - **testing-essentials** - Testing patterns: DataCase/ConnCase setup, fixtures, LiveView tests, TDD workflow
 - **otp-essentials** - OTP patterns: GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry, ETS
 - **oban-essentials** - Background jobs: workers, queues, idempotency, unique jobs, cron, testing with Oban.Testing
+- **code-quality** - Automated code quality detection: duplication, complexity, unused functions
 
 Each skill includes a RULES section with 7-9 non-negotiable patterns that must be followed.
 
 **Note on auto_suggest metadata:** Skills include `auto_suggest: true` and `file_patterns` metadata for future Claude Code enhancements. These fields are not currently active in the Claude Code runtime but are included for forward compatibility.
 
-### Hooks (13 shell commands in settings.json)
+### Hooks (14 rules in settings.json)
 Active enforcement rules that catch anti-patterns in real-time:
 
 **Blocking (exit 2 - prevents action):**
@@ -40,11 +41,20 @@ Active enforcement rules that catch anti-patterns in real-time:
 - **auto-upload-warning** - Warns when auto_upload: true is detected
 - **debug-statements** - Warns on IO.inspect, dbg(), IO.puts outside test files
 
+**PostToolUse (runs after file write):**
+- **code-quality-analysis** - Detects code duplication, ABC complexity >30, unused private functions (.ex/.exs) and template duplication (.heex)
+
 **Reminders (exit 0 - non-blocking nudge):**
 - **security-audit** - Suggests mix deps.audit/hex.audit/sobelow when mix.exs changes
 
 ### Subagent Enforcement
-- **SubagentStart hook** - Injects condensed rules from all 7 skills into every spawned subagent, ensuring code written by subagents follows the same standards
+- **SubagentStart hook** - Injects condensed rules from all 8 skills into every spawned subagent, ensuring code written by subagents follows the same standards
+
+### Analysis Scripts (3 scripts)
+Automated code quality analysis tools:
+- **code_quality.exs** - AST-based Elixir analysis: duplication detection, ABC complexity, unused function detection
+- **detect_template_duplication.sh** - HEEx template duplication detection
+- **run_analysis.sh** - Full project analysis runner
 
 ### Agent Documentation (4 files)
 Detailed reference material for complex tasks:
@@ -75,7 +85,7 @@ In a Claude Code session, use the interactive plugin manager:
 # - Select the elixir-phoenix-guide marketplace
 # - Install the elixir-phoenix-guide plugin
 # - Choose scope (user = all projects, project = current only)
-# - Verify you have version 1.4.0 or higher
+# - Verify you have version 2.0.0 or higher
 ```
 
 ### Updating to Latest Version
@@ -88,13 +98,16 @@ If you already have the plugin installed:
 
 # Select "Marketplaces" → "elixir-phoenix-guide" → "Update"
 # Then update the plugin from the menu
-# Verify version shows 1.4.0 or higher
+# Verify version shows 2.0.0 or higher
 ```
 
-**Latest Updates (v1.4.0):**
-- 2 new skills: otp-essentials (GenServer, Supervisor, Task) and oban-essentials (workers, queues, testing)
-- 3 new hooks: dangerous operations blocker, debug statement detector, security audit reminder
-- SubagentStart hook injects rules into all spawned subagents
+**Latest Updates (v2.0.0):**
+- New `code-quality` skill with automated code quality detection
+- PostToolUse hook for real-time analysis after file writes
+- 3 analysis scripts: code duplication, template duplication, full project scan
+- AST-based function duplication detection across modules
+- ABC complexity analysis with configurable threshold
+- Unused private function detection
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
@@ -152,6 +165,10 @@ def process(_), do: :inactive
 - **Warns** about nested if/else (suggests pattern matching)
 - **Warns** about inefficient Enum chains (suggests for comprehensions)
 - **Warns** about string concatenation in loops (suggests IO lists)
+- **Detects** code duplication across modules (>70% function similarity)
+- **Detects** high ABC complexity functions (threshold: 30)
+- **Detects** unused private functions after refactoring
+- **Detects** template duplication in HEEx files (>40% identical markup)
 
 ### Developer Experience
 - Proactive guidance on Elixir idioms
@@ -185,14 +202,19 @@ This file will be automatically loaded by Claude Code when working in your proje
 ```
 elixir-phoenix-guide/
 ├── README.md                          # This file
-├── skills/                            # Elixir expertise (7 essential skills)
+├── skills/                            # Elixir expertise (8 essential skills)
 │   ├── elixir-essentials/SKILL.md
 │   ├── phoenix-liveview-essentials/SKILL.md
 │   ├── ecto-essentials/SKILL.md
 │   ├── phoenix-uploads/SKILL.md
 │   ├── testing-essentials/SKILL.md
 │   ├── otp-essentials/SKILL.md
-│   └── oban-essentials/SKILL.md
+│   ├── oban-essentials/SKILL.md
+│   └── code-quality/SKILL.md
+├── scripts/                           # Code quality analysis scripts
+│   ├── code_quality.exs              # AST-based Elixir analysis
+│   ├── detect_template_duplication.sh # HEEx template comparison
+│   └── run_analysis.sh               # Full project analysis runner
 ├── hooks-settings.json                # Hook configuration
 └── agents/                            # Reference documentation
     ├── project-structure.md
@@ -229,7 +251,7 @@ In a Claude Code session:
 /plugin
 
 # Or check version in the plugin list
-# Navigate to your installed plugins and verify version 1.4.0 or higher
+# Navigate to your installed plugins and verify version 2.0.0 or higher
 ```
 
 ## Troubleshooting

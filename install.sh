@@ -79,11 +79,21 @@ cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
 if command -v jq &> /dev/null; then
   jq -s '.[0] * .[1]' "$SETTINGS_FILE" "$SOURCE_DIR/hooks-settings.json" > "$SETTINGS_FILE.tmp"
   mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-  echo -e "${GREEN}✓ Installed 6 hooks (merged with jq)${NC}"
+  echo -e "${GREEN}✓ Installed 14 hooks (merged with jq)${NC}"
 else
   echo -e "${YELLOW}⚠ jq not found. Please manually merge hooks-settings.json into ~/.claude/settings.json${NC}"
   echo -e "${YELLOW}  See INSTALL-HOOKS.md for instructions${NC}"
 fi
+
+# Install analysis scripts
+echo -e "${YELLOW}Installing analysis scripts...${NC}"
+mkdir -p "$CLAUDE_DIR/scripts/elixir-phoenix-guide"
+cp "$SOURCE_DIR/scripts/code_quality.exs" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
+cp "$SOURCE_DIR/scripts/detect_template_duplication.sh" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
+cp "$SOURCE_DIR/scripts/run_analysis.sh" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
+chmod +x "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"*.sh
+chmod +x "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"*.exs
+echo -e "${GREEN}✓ Installed 3 analysis scripts${NC}"
 
 # Install agent documentation
 echo -e "${YELLOW}Installing agent documentation...${NC}"
@@ -111,8 +121,9 @@ echo ""
 echo -e "${GREEN}Installation complete!${NC}"
 echo ""
 echo "Installed components:"
-echo "  • 8 Skills (skill-discovery, elixir-patterns, phoenix-liveview, ecto-database, error-handling, phoenix-uploads, phoenix-static-files, liveview-lifecycle)"
-echo "  • 10 Hooks (missing-impl, hardcoded-paths, hardcoded-sizes, static-paths, deprecated-components, nested-if, inefficient-enum, string-concat, auto-upload)"
+echo "  • 8 Skills (elixir-essentials, phoenix-liveview-essentials, ecto-essentials, phoenix-uploads, testing-essentials, otp-essentials, oban-essentials, code-quality)"
+echo "  • 14 Hooks (13 PreToolUse + 1 PostToolUse code quality analyzer)"
+echo "  • 3 Analysis scripts (code duplication, template duplication, full project scan)"
 echo "  • 4 Agent docs (project-structure, liveview-checklist, ecto-conventions, testing-guide)"
 echo ""
 echo "Hooks are now in ~/.claude/settings.json"

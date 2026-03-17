@@ -1,8 +1,8 @@
 # Elixir Phoenix Guide Plugin - Roadmap
 
-**Last Updated:** 2026-03-13
-**Current Version:** 1.3.2
-**Status:** Planning for v1.4.0 (Competitive Parity)
+**Last Updated:** 2026-03-16
+**Current Version:** 2.0.0
+**Status:** Planning for v2.1.0 (Additional Skills & Polish)
 
 This document outlines the evolution of the Elixir Phoenix Guide plugin, tracking completed work and planned improvements.
 
@@ -22,7 +22,7 @@ This project follows [Semantic Versioning 2.0.0](https://semver.org/):
 - v1.3.1 = LiveView rules + template refinements ✅
 - v1.3.2 = Testing essentials refinements (setup chaining, timestamps, async, skeletons) ✅
 - v1.4.0 = Competitive parity (new hooks, OTP skill, Oban skill, subagent rules injection) ✅
-- v2.0.0 = Automation (major new feature set)
+- v2.0.0 = Automation (code quality detection, duplication, complexity, unused functions) ✅
 - v2.1.0 = Additional skills & polish (minor features after major)
 - v2.2.0 = Smart enforcement (context-aware hooks, project detection, migration safety)
 - v2.3.0 = Expanded domains (security, deployment, channels, telemetry, JSON API)
@@ -643,12 +643,12 @@ New skills covering Phoenix development domains not yet addressed.
 
 ---
 
-## Version 2.0.0 - Automation (Code Quality Detection)
+## Version 2.0.0 - Automation (Code Quality Detection) ✅
 
 **Priority:** 🔴 **HIGH**
 **Effort:** High (~60 hours)
 **Impact:** Very High
-**Target:** Month 2
+**Shipped:** 2026-03-16
 
 **Note:** Major version bump due to significant new automation features that go beyond skill/hook guidance.
 

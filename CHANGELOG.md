@@ -8,10 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Additional skills and hooks (v2.1.0)
 - Smart enforcement with context-aware hooks (v2.2.0)
 
-See [ROADMAP.md](ROADMAP.md) for detailed planning.
+## [2.1.0] - 2026-03-19
+
+### Added
+- **`phoenix-liveview-auth` skill** — 7 RULES covering on_mount callbacks, current_scope vs current_user, import conflict resolution, session token extraction, bracket access safety, auth redirect testing, live_session router integration
+- **`ecto-changeset-patterns` skill** — 7 RULES covering separate named changesets per operation, cast_assoc foreign key pitfalls, changeset composition with pipes, unsafe_validate_unique pairing, update_change transforms, conditional validation with opts, changeset-level validation
+- **`phoenix-auth-customization` skill** — 6 RULES covering extending phx.gen.auth with custom fields, separate migrations, registration_changeset updates, test fixture maintenance, user confirmation in fixtures
+- **`phoenix-pubsub-patterns` skill** — 6 RULES covering connected? guard for subscriptions, broadcasting from contexts, topic naming conventions, handle_info for PubSub, immutable assign updates, full-cycle testing
+- **`phoenix-authorization-patterns` skill** — 6 RULES covering server-side authorization in event handlers, ownership verification, policy modules, data-confirm for destructive actions, scoped context queries, unauthorized path testing
+- **`ecto-nested-associations` skill** — 6 RULES covering cast_assoc for has_many/has_one, Ecto.Multi for multi-table operations, on_delete cascade strategies, FK indexes, on_replace: :delete, preloading before updates
+- **`migration-safety` hook** (Write/Edit, exit 1) — checks migration files for missing FK indexes, missing on_delete strategies, unsafe column removals, NOT NULL without defaults
+
+### Changed
+- **Skill count:** 8 → 14 (6 new skills covering auth, changesets, PubSub, authorization, nested associations)
+- **Hook count:** 14 → 15 (new migration safety hook)
+- **SubagentStart hook** — updated to inject condensed rules from all 14 skills
+- **CLAUDE.md.template** — updated with 6 new skill references and migration-safety hook
+
+### Impact
+- Comprehensive coverage of Phoenix authentication, authorization, and data patterns
+- Battle-tested skills based on real-world debugging sessions (30-90 min pain points each)
+- Migration safety catches common deployment-breaking issues before they're committed
+- All new skill rules enforced in subagents via updated SubagentStart hook
 
 ## [2.0.0] - 2026-03-16
 
@@ -226,6 +246,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.1.0 | 2026-03-19 | Additional skills & polish — auth, changesets, PubSub, authorization, nested associations, migration safety |
 | v2.0.0 | 2026-03-16 | Automation — code duplication, complexity, unused functions, template duplication |
 | v1.4.0 | 2026-03-13 | Competitive parity — OTP skill, Oban skill, 3 new hooks, subagent enforcement |
 | v1.3.2 | 2026-03-08 | Testing essentials refinements — setup chaining, timestamps, async, skeletons |
@@ -246,38 +267,19 @@ Install using any of the three methods in README.md. No migration needed.
 
 ## Future Versions (Planned)
 
-### v1.1.0 - Quick Wins: Skill Discoverability
-**Target:** Week 1 after v1.0.0
-**Focus:** Make existing skills more discoverable and enforce usage
+### v2.2.0 - Smart Enforcement
+**Focus:** Context-aware hooks, project detection, PostToolUse validation
 
-**Planned Changes:**
-- Update all skill descriptions with "INVOKE BEFORE" forcing language
-- Add file pattern detection metadata to skills
-- Create skill-discovery meta-skill
+### v2.3.0 - Expanded Domains
+**Focus:** Security hooks, deployment gotchas, channels, telemetry, JSON API
 
-### v1.2.0 - High-Impact Skills
-**Target:** Week 3 after v1.0.0
-**Focus:** Add battle-tested patterns from real Phoenix development
-
-**Planned Additions:**
-- `phoenix-liveview-auth` - on_mount patterns, session handling
-- `phoenix-file-uploads` - consume_uploaded_entries, static_paths
-- `ecto-changeset-patterns` - cast_assoc, conditional validation
-- `phoenix-auth-customization` - Extending phx.gen.auth
-
-### v2.1.0 - Polish: Additional Skills & Hooks
-**Target:** Month 3 after v1.0.0
-**Focus:** Additional patterns and refinements
-
-**Planned Additions:**
-- `phoenix-pubsub-patterns` - Real-time update patterns
-- `phoenix-authorization-patterns` - Owner-only actions, RBAC
-- `ecto-nested-associations` - cast_assoc, Ecto.Multi
-- Pre-migration and pre-commit hooks
+### v3.0.0 - Reactive Intelligence
+**Focus:** Error decoder, test failure analyzer, Credo integration
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.1...v1.3.2

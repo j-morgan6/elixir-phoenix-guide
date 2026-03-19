@@ -75,6 +75,12 @@ skill from the elixir-phoenix-guide plugin:
 - **Background jobs (Oban workers)** → invoke `elixir-phoenix-guide:oban-essentials`
 - **Writing tests (_test.exs)** → invoke `elixir-phoenix-guide:testing-essentials`
 - **Refactoring or analyzing code quality** → invoke `elixir-phoenix-guide:code-quality`
+- **LiveView authentication (on_mount, sessions)** → invoke `elixir-phoenix-guide:phoenix-liveview-auth`
+- **Advanced changesets (cast_assoc, conditional validation)** → invoke `elixir-phoenix-guide:ecto-changeset-patterns`
+- **Extending phx.gen.auth (custom fields)** → invoke `elixir-phoenix-guide:phoenix-auth-customization`
+- **PubSub real-time updates** → invoke `elixir-phoenix-guide:phoenix-pubsub-patterns`
+- **Authorization and access control** → invoke `elixir-phoenix-guide:phoenix-authorization-patterns`
+- **Nested associations (cast_assoc, Ecto.Multi)** → invoke `elixir-phoenix-guide:ecto-nested-associations`
 
 This is not optional. Do not rationalize skipping this step. Invoke the skill, read the
 rules section, then proceed with implementation.
@@ -126,6 +132,12 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 6. **oban-essentials** - Background jobs, workers, queues, idempotency, Oban.Testing
 7. **testing-essentials** - DataCase/ConnCase, fixtures, LiveView tests, TDD workflow
 8. **code-quality** - Automated duplication, complexity, and unused function detection
+9. **phoenix-liveview-auth** - on_mount auth, current_scope, import conflicts, session handling
+10. **ecto-changeset-patterns** - Separate changesets, cast_assoc pitfalls, composition, transforms
+11. **phoenix-auth-customization** - Extending phx.gen.auth with custom fields, fixtures
+12. **phoenix-pubsub-patterns** - PubSub subscriptions, broadcasting from contexts, topic naming
+13. **phoenix-authorization-patterns** - Server-side authz, ownership, policy modules, scoped queries
+14. **ecto-nested-associations** - cast_assoc, cast_embed, Ecto.Multi, cascades, FK indexes
 
 ## Hooks
 
@@ -137,6 +149,7 @@ Hooks actively enforce code quality:
 - **missing-impl** - Blocks callbacks without @impl true
 - **string-concatenation** - Warns about <> in loops (use IO lists)
 - **code-quality-analysis** - After write: detects duplication, complexity, unused functions
+- **migration-safety** - Checks migrations for missing FK indexes, cascade strategies, unsafe operations
 
 If a hook triggers, follow its suggestion. Hooks catch common Elixir anti-patterns.
 

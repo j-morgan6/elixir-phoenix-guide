@@ -1,6 +1,6 @@
 {
   "name": "elixir-phoenix-guide",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Essential Elixir and Phoenix LiveView development guide with enforced skills, hooks, and patterns for idiomatic code",
   "author": {
     "name": "Joseph Morgan",

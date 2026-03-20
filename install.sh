@@ -79,7 +79,7 @@ cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
 if command -v jq &> /dev/null; then
   jq -s '.[0] * .[1]' "$SETTINGS_FILE" "$SOURCE_DIR/hooks-settings.json" > "$SETTINGS_FILE.tmp"
   mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-  echo -e "${GREEN}✓ Installed 15 hooks (merged with jq)${NC}"
+  echo -e "${GREEN}✓ Installed 21 hooks (merged with jq)${NC}"
 else
   echo -e "${YELLOW}⚠ jq not found. Please manually merge hooks-settings.json into ~/.claude/settings.json${NC}"
   echo -e "${YELLOW}  See INSTALL-HOOKS.md for instructions${NC}"
@@ -89,11 +89,12 @@ fi
 echo -e "${YELLOW}Installing analysis scripts...${NC}"
 mkdir -p "$CLAUDE_DIR/scripts/elixir-phoenix-guide"
 cp "$SOURCE_DIR/scripts/code_quality.exs" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
+cp "$SOURCE_DIR/scripts/detect_project.sh" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
 cp "$SOURCE_DIR/scripts/detect_template_duplication.sh" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
 cp "$SOURCE_DIR/scripts/run_analysis.sh" "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"
 chmod +x "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"*.sh
 chmod +x "$CLAUDE_DIR/scripts/elixir-phoenix-guide/"*.exs
-echo -e "${GREEN}✓ Installed 3 analysis scripts${NC}"
+echo -e "${GREEN}✓ Installed 4 scripts (analysis + project detection)${NC}"
 
 # Install agent documentation
 echo -e "${YELLOW}Installing agent documentation...${NC}"
@@ -122,8 +123,8 @@ echo -e "${GREEN}Installation complete!${NC}"
 echo ""
 echo "Installed components:"
 echo "  • 14 Skills (elixir-essentials, phoenix-liveview-essentials, ecto-essentials, phoenix-uploads, testing-essentials, otp-essentials, oban-essentials, code-quality, phoenix-liveview-auth, ecto-changeset-patterns, phoenix-auth-customization, phoenix-pubsub-patterns, phoenix-authorization-patterns, ecto-nested-associations)"
-echo "  • 15 Hooks (14 PreToolUse + 1 PostToolUse code quality)"
-echo "  • 3 Analysis scripts (code duplication, template duplication, full project scan)"
+echo "  • 21 Hooks (1 SessionStart + 14 PreToolUse + 5 PostToolUse + 1 SubagentStart)"
+echo "  • 4 Scripts (code quality, template duplication, project detection, full project scan)"
 echo "  • 4 Agent docs (project-structure, liveview-checklist, ecto-conventions, testing-guide)"
 echo ""
 echo "Hooks are now in ~/.claude/settings.json"

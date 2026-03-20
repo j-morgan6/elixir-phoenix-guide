@@ -141,17 +141,23 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 
 ## Hooks
 
-Hooks actively enforce code quality:
+Hooks actively enforce code quality and adapt to your project stack:
 
-- **nested-if-else** - Warns about nested if/else (prefer pattern matching)
-- **hardcoded-config** - Blocks hardcoded paths/limits (use Application.get_env)
-- **inefficient-enum** - Warns about multiple Enum passes (use for comprehensions)
-- **missing-impl** - Blocks callbacks without @impl true
-- **string-concatenation** - Warns about <> in loops (use IO lists)
+**Context-Aware:** Hooks read `.elixir-phoenix-guide-project.json` (generated at session start from `mix.exs`) to adapt behavior — API-only projects skip LiveView hooks, Phoenix 1.8+ gets Scope-aware guidance.
+
+- **nested-if-else** - Warns with case/multi-clause function fix suggestion
+- **hardcoded-config** - Blocks hardcoded paths/limits with Application.get_env fix
+- **inefficient-enum** - Warns with for comprehension/reduce fix suggestion
+- **missing-impl** - Blocks callbacks without @impl true (skips in API-only projects)
+- **string-concatenation** - Warns with IO list/Enum.join fix suggestion
 - **code-quality-analysis** - After write: detects duplication, complexity, unused functions
 - **migration-safety** - Checks migrations for missing FK indexes, cascade strategies, unsafe operations
+- **missing-preload** - After write: warns on association accessors without visible preload
+- **missing-error-clause** - After write: warns on `with` missing `else` clause
+- **raw-sql-warning** - After write: blocks SQL injection, warns on raw SQL
+- **context-boundary-violation** - After write: warns on Repo in LiveViews (skips in API-only projects)
 
-If a hook triggers, follow its suggestion. Hooks catch common Elixir anti-patterns.
+If a hook triggers, follow its suggestion — each warning includes a copy-pasteable fix.
 
 ## Code Quality Automation
 

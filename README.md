@@ -1,10 +1,10 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 2.1.0 | [Changelog](CHANGELOG.md)
+**Version:** 2.2.0 | [Changelog](CHANGELOG.md)
 
-An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, hooks, automated code quality analysis, and agent documentation that actively guide and validate your Elixir development workflow.
+An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, context-aware hooks, automated code quality analysis, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v2.1.0 Released!** 6 new skills covering auth, changesets, PubSub, authorization, and nested associations, plus a migration safety hook. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v2.2.0 Released!** Smart enforcement — hooks now adapt to your project stack, PostToolUse validation catches architectural issues, and all warnings include copy-pasteable fix suggestions. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 
@@ -29,27 +29,34 @@ Each skill includes a RULES section with 6-11 non-negotiable patterns that must 
 
 **Note on auto_suggest metadata:** Skills include `auto_suggest: true` and `file_patterns` metadata for future Claude Code enhancements. These fields are not currently active in the Claude Code runtime but are included for forward compatibility.
 
-### Hooks (15 rules in settings.json)
-Active enforcement rules that catch anti-patterns in real-time:
+### Hooks (21 rules in settings.json)
+Context-aware enforcement rules that adapt to your project stack:
+
+**SessionStart (runs once per session):**
+- **project-detection** - Parses `mix.exs` to detect Phoenix version, LiveView, Ecto adapter, Oban — hooks adapt behavior based on results
 
 **Blocking (exit 2 - prevents action):**
-- **missing-impl** - Blocks callbacks without @impl true
-- **hardcoded-paths** - Blocks hardcoded file paths
-- **hardcoded-sizes** - Blocks hardcoded file size limits
+- **missing-impl** - Blocks callbacks without @impl true (skips in API-only projects) — with fix suggestion
+- **hardcoded-paths** - Blocks hardcoded file paths — with Application.get_env fix
+- **hardcoded-sizes** - Blocks hardcoded file size limits — with config migration fix
 - **static-paths-validator** - Blocks file references not in static_paths()
-- **deprecated-components** - Blocks deprecated Phoenix components (.flash_group, form_for, live_redirect)
+- **deprecated-components** - Blocks deprecated Phoenix components — context-aware: warns on @current_user in Phoenix 1.8+ projects
 - **dangerous-operations** - Blocks mix ecto.reset, git push --force, MIX_ENV=prod
 
-**Warnings (exit 1 - shows warning, allows action):**
-- **nested-if-else** - Warns about nested if/else, suggests pattern matching
-- **inefficient-enum** - Warns about multiple Enum operations
-- **string-concatenation** - Warns about string concatenation in loops
-- **auto-upload-warning** - Warns when auto_upload: true is detected
+**Warnings (exit 1 - shows warning with fix suggestion):**
+- **nested-if-else** - Warns with case/multi-clause function fix
+- **inefficient-enum** - Warns with for comprehension/reduce fix
+- **string-concatenation** - Warns with IO list/Enum.join fix
+- **auto-upload-warning** - Warns when auto_upload: true is detected (skips in API-only projects)
 - **debug-statements** - Warns on IO.inspect, dbg(), IO.puts outside test files
 - **migration-safety** - Checks for missing FK indexes, on_delete strategies, unsafe column operations
 
 **PostToolUse (runs after file write):**
 - **code-quality-analysis** - Detects code duplication, ABC complexity >30, unused private functions (.ex/.exs) and template duplication (.heex)
+- **missing-preload** - Warns on association accessors without visible preload
+- **missing-error-clause** - Warns on `with` statements missing `else` clause
+- **raw-sql-warning** - Blocks SQL injection patterns, warns on all raw SQL with parameterized query suggestions
+- **context-boundary-violation** - Warns on direct Repo calls in LiveView modules (skips in API-only projects)
 
 **Reminders (exit 0 - non-blocking nudge):**
 - **security-audit** - Suggests mix deps.audit/hex.audit/sobelow when mix.exs changes
@@ -57,10 +64,11 @@ Active enforcement rules that catch anti-patterns in real-time:
 ### Subagent Enforcement
 - **SubagentStart hook** - Injects condensed rules from all 14 skills into every spawned subagent, ensuring code written by subagents follows the same standards
 
-### Analysis Scripts (3 scripts)
+### Analysis Scripts (4 scripts)
 Automated code quality analysis tools:
 - **code_quality.exs** - AST-based Elixir analysis: duplication detection, ABC complexity, unused function detection
 - **detect_template_duplication.sh** - HEEx template duplication detection
+- **detect_project.sh** - Project stack detection for context-aware hooks
 - **run_analysis.sh** - Full project analysis runner
 
 ### Agent Documentation (4 files)
@@ -92,7 +100,7 @@ In a Claude Code session, use the interactive plugin manager:
 # - Select the elixir-phoenix-guide marketplace
 # - Install the elixir-phoenix-guide plugin
 # - Choose scope (user = all projects, project = current only)
-# - Verify you have version 2.1.0 or higher
+# - Verify you have version 2.2.0 or higher
 ```
 
 ### Updating to Latest Version
@@ -105,14 +113,15 @@ If you already have the plugin installed:
 
 # Select "Marketplaces" → "elixir-phoenix-guide" → "Update"
 # Then update the plugin from the menu
-# Verify version shows 2.1.0 or higher
+# Verify version shows 2.2.0 or higher
 ```
 
-**Latest Updates (v2.1.0):**
-- 6 new skills: auth, changesets, PubSub, authorization, nested associations
-- Migration safety hook for catching unsafe migration operations
-- SubagentStart rules updated for all 14 skills
-- Total: 14 skills, 15 hooks, 3 analysis scripts, 4 agent docs
+**Latest Updates (v2.2.0):**
+- Project detection: hooks now adapt to your project stack (Phoenix version, LiveView, Ecto, Oban)
+- 4 new PostToolUse validation hooks: missing-preload, missing-error-clause, raw-sql-warning, context-boundary-violation
+- All warning hooks upgraded with copy-pasteable auto-fix suggestions
+- Context-aware: API-only projects skip LiveView hooks, Phoenix 1.8+ gets Scope guidance
+- Total: 14 skills, 21 hooks, 4 analysis scripts, 4 agent docs
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
@@ -222,8 +231,9 @@ elixir-phoenix-guide/
 │   ├── phoenix-pubsub-patterns/SKILL.md
 │   ├── phoenix-authorization-patterns/SKILL.md
 │   └── ecto-nested-associations/SKILL.md
-├── scripts/                           # Code quality analysis scripts
+├── scripts/                           # Analysis and detection scripts
 │   ├── code_quality.exs              # AST-based Elixir analysis
+│   ├── detect_project.sh             # Project stack detection
 │   ├── detect_template_duplication.sh # HEEx template comparison
 │   └── run_analysis.sh               # Full project analysis runner
 ├── hooks-settings.json                # Hook configuration
@@ -262,7 +272,7 @@ In a Claude Code session:
 /plugin
 
 # Or check version in the plugin list
-# Navigate to your installed plugins and verify version 2.1.0 or higher
+# Navigate to your installed plugins and verify version 2.2.0 or higher
 ```
 
 ## Troubleshooting

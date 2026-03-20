@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCRIPTS_DIR=\"$HOME/.claude/scripts/elixir-phoenix-guide\"; if [ -f \"$SCRIPTS_DIR/detect_project.sh\" ]; then bash \"$SCRIPTS_DIR/detect_project.sh\" 2>/dev/null; fi; exit 0",
+            "description": "Detect project stack (Phoenix version, LiveView, Ecto, Oban) and cache for context-aware hooks"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -16,38 +28,38 @@
         "hooks": [
           {
             "type": "command",
-            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" = \"ex\" ] || [ \"$EXT\" = \"exs\" ] || [ \"$EXT\" = \"heex\" ]; then echo '💡 Reminder: Did you invoke the relevant elixir-phoenix-guide skill before writing this file? If not, invoke it now and verify your code follows the rules.'; fi; exit 0",
-            "description": "Remind about skill invocation for Elixir files"
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; CACHE=\"$(pwd)/.elixir-phoenix-guide-project.json\"; if [ \"$EXT\" = \"ex\" ] || [ \"$EXT\" = \"exs\" ] || [ \"$EXT\" = \"heex\" ]; then SKIP_LV='false'; if [ -f \"$CACHE\" ]; then HAS_LV=$(grep -o '\"has_liveview\":\\s*[a-z]*' \"$CACHE\" 2>/dev/null | grep -o '[a-z]*$'); if [ \"$HAS_LV\" = 'false' ]; then SKIP_LV='true'; fi; fi; if [ \"$SKIP_LV\" = 'true' ]; then echo '💡 Reminder: API-only project detected (no LiveView). LiveView skills/hooks are inactive. Did you invoke the relevant elixir-phoenix-guide skill?'; else echo '💡 Reminder: Did you invoke the relevant elixir-phoenix-guide skill before writing this file? If not, invoke it now and verify your code follows the rules.'; fi; fi; exit 0",
+            "description": "Remind about skill invocation for Elixir files (context-aware: notes API-only projects)"
           },
           {
             "type": "command",
-            "command": "FILTERED=$(grep -v '^\\s*#' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$FILTERED\" | grep -qE 'def\\s+(mount|handle_event|handle_info|handle_call|handle_cast|render|init|terminate)\\(' && ! echo \"$FILTERED\" | grep -B1 'def\\s\\+(mount|handle_event|handle_info|handle_call|handle_cast|render|init|terminate)\\(' | grep -q '@impl'; then echo '⚠️  Missing @impl true before callback function. Add @impl true before mount, handle_event, handle_info, handle_call, handle_cast, render, init, or terminate callbacks.' && exit 2; fi",
-            "description": "Block callbacks without @impl true (ignores comments)"
+            "command": "CACHE=\"$(pwd)/.elixir-phoenix-guide-project.json\"; if [ -f \"$CACHE\" ]; then HAS_LV=$(grep -o '\"has_liveview\":\\s*[a-z]*' \"$CACHE\" 2>/dev/null | grep -o '[a-z]*$'); if [ \"$HAS_LV\" = 'false' ]; then exit 0; fi; fi; FILTERED=$(grep -v '^\\s*#' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$FILTERED\" | grep -qE 'def\\s+(mount|handle_event|handle_info|handle_call|handle_cast|render|init|terminate)\\(' && ! echo \"$FILTERED\" | grep -B1 'def\\s\\+(mount|handle_event|handle_info|handle_call|handle_cast|render|init|terminate)\\(' | grep -q '@impl'; then echo '⚠️  Missing @impl true before callback function.' && echo '' && echo '   💡 Fix: Add @impl true on the line before each callback:' && echo '' && echo '     @impl true' && echo '     def mount(params, session, socket) do' && echo '       ...' && echo '     end' && echo '' && echo '   Applies to: mount, handle_event, handle_info, handle_call, handle_cast, render, init, terminate' && exit 2; fi",
+            "description": "Block callbacks without @impl true — with fix suggestion (context-aware: skips in API-only projects)"
           },
           {
             "type": "command",
-            "command": "if grep -qE '(upload_path|file_path|uploads_dir)\\s*=\\s*[\"'\\''](/|priv/)' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 Hardcoded file path detected. Use Application.get_env(:app, :config_key) instead.' && exit 2; fi",
-            "description": "Block hardcoded file paths"
+            "command": "if grep -qE '(upload_path|file_path|uploads_dir)\\s*=\\s*[\"'\\''](/|priv/)' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 Hardcoded file path detected.' && echo '' && echo '   💡 Fix: Move to Application config:' && echo '' && echo '     # config/config.exs' && echo '     config :my_app, :upload_path, \"priv/static/uploads\"' && echo '' && echo '     # In your module' && echo '     upload_path = Application.get_env(:my_app, :upload_path)' && exit 2; fi",
+            "description": "Block hardcoded file paths — with fix suggestion"
           },
           {
             "type": "command",
-            "command": "if grep -qE '(max_file_size|file_size_limit|max_upload|max_size)\\s*=\\s*[0-9]{7,}' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 Hardcoded file size limit detected (7+ digits). Move to Application config.' && exit 2; fi",
-            "description": "Block hardcoded file size limits"
+            "command": "if grep -qE '(max_file_size|file_size_limit|max_upload|max_size)\\s*=\\s*[0-9]{7,}' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 Hardcoded file size limit detected (7+ digits).' && echo '' && echo '   💡 Fix: Move to Application config:' && echo '' && echo '     # config/config.exs' && echo '     config :my_app, :max_upload_size, 10_000_000' && echo '' && echo '     # In your module' && echo '     max_size = Application.get_env(:my_app, :max_upload_size)' && exit 2; fi",
+            "description": "Block hardcoded file size limits — with fix suggestion"
           },
           {
             "type": "command",
-            "command": "COLLAPSED=$(tr '\\n' ' ' < \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$COLLAPSED\" | grep -qE 'if\\s+[^d]+\\s+do\\s+[^e]*if\\s+[^d]+\\s+do'; then echo '⚠️  Nested if/else detected. Consider using pattern matching or case statements for more idiomatic Elixir.' && exit 1; fi",
-            "description": "Warn on nested if/else (handles multiline)"
+            "command": "COLLAPSED=$(tr '\\n' ' ' < \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$COLLAPSED\" | grep -qE 'if\\s+[^d]+\\s+do\\s+[^e]*if\\s+[^d]+\\s+do'; then echo '⚠️  Nested if/else detected.' && echo '' && echo '   💡 Fix: Replace with case or multi-clause function:' && echo '' && echo '     # Instead of nested if/else:' && echo '     case {condition_a, condition_b} do' && echo '       {true, true} -> handle_both()' && echo '       {true, false} -> handle_a_only()' && echo '       _ -> handle_default()' && echo '     end' && echo '' && echo '     # Or use multi-clause functions:' && echo '     defp handle(true, true), do: ...' && echo '     defp handle(true, false), do: ...' && echo '     defp handle(_, _), do: ...' && exit 1; fi",
+            "description": "Warn on nested if/else — with case/multi-clause fix suggestion"
           },
           {
             "type": "command",
-            "command": "COLLAPSED=$(tr '\\n' ' ' < \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$COLLAPSED\" | grep -qE '\\|>\\s*Enum\\.(map|filter)\\([^)]+\\)\\s*\\|>\\s*Enum\\.(map|filter)\\('; then echo '⚠️  Multiple Enum operations detected. Consider using a for comprehension or Enum.reduce for better performance.' && exit 1; fi",
-            "description": "Warn on inefficient Enum chains (handles multiline)"
+            "command": "COLLAPSED=$(tr '\\n' ' ' < \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$COLLAPSED\" | grep -qE '\\|>\\s*Enum\\.(map|filter)\\([^)]+\\)\\s*\\|>\\s*Enum\\.(map|filter)\\('; then echo '⚠️  Multiple Enum.map/filter chain detected.' && echo '' && echo '   💡 Fix: Use a for comprehension or combine into one pass:' && echo '' && echo '     # Instead of: list |> Enum.filter(&active?/1) |> Enum.map(&transform/1)' && echo '     for item <- list, active?(item), do: transform(item)' && echo '' && echo '     # Or use Enum.reduce for complex transformations:' && echo '     Enum.reduce(list, [], fn item, acc ->' && echo '       if active?(item), do: [transform(item) | acc], else: acc' && echo '     end) |> Enum.reverse()' && exit 1; fi",
+            "description": "Warn on inefficient Enum chains — with for comprehension fix suggestion"
           },
           {
             "type": "command",
-            "command": "if grep -qE 'Enum\\.(map|reduce|each).*<>' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  String concatenation with <> in Enum operations. Consider using IO lists or Enum.join for better performance.' && exit 1; fi",
-            "description": "Warn on string concatenation in loops"
+            "command": "if grep -qE 'Enum\\.(map|reduce|each).*<>' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  String concatenation with <> in Enum operations.' && echo '' && echo '   💡 Fix: Use IO lists or Enum.join:' && echo '' && echo '     # Instead of: Enum.map(items, &(prefix <> &1))' && echo '     # Use IO lists (zero-copy, best performance):' && echo '     Enum.map(items, &[prefix, &1])' && echo '' && echo '     # Or Enum.join for simple cases:' && echo '     Enum.join(items, \", \")' && exit 1; fi",
+            "description": "Warn on string concatenation in loops — with IO list/Enum.join fix suggestion"
           },
           {
             "type": "command",
@@ -56,13 +68,13 @@
           },
           {
             "type": "command",
-            "command": "if grep -qE '<\\.(flash_group|flash)' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 .flash_group component is deprecated in Phoenix 1.8+. Flash handling is now automatic in layouts. Remove <.flash_group> calls.' && exit 2; fi; if grep -qE 'form_for\\(' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 form_for is deprecated. Use <.form for={to_form(@changeset)}> instead.' && exit 2; fi; if grep -qE 'live_redirect|live_patch' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 live_redirect/live_patch are deprecated. Use <.link navigate={path}> or push_navigate/push_patch instead.' && exit 2; fi",
-            "description": "Block deprecated Phoenix components and functions"
+            "command": "CACHE=\"$(pwd)/.elixir-phoenix-guide-project.json\"; HAS_SCOPE='false'; if [ -f \"$CACHE\" ]; then HAS_SCOPE=$(grep -o '\"phoenix_has_scope\":\\s*[a-z]*' \"$CACHE\" 2>/dev/null | grep -o '[a-z]*$'); fi; if grep -qE '<\\.(flash_group|flash)' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 .flash_group component is deprecated in Phoenix 1.8+. Flash handling is now automatic in layouts. Remove <.flash_group> calls.' && exit 2; fi; if grep -qE 'form_for\\(' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 form_for is deprecated. Use <.form for={to_form(@changeset)}> instead.' && exit 2; fi; if grep -qE 'live_redirect|live_patch' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '🚫 live_redirect/live_patch are deprecated. Use <.link navigate={path}> or push_navigate/push_patch instead.' && exit 2; fi; if [ \"$HAS_SCOPE\" = 'true' ] && grep -qE '@current_user|current_user' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null && ! grep -qE '@current_scope|current_scope' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  Phoenix 1.8+ detected: Use @current_scope instead of @current_user. Access user via @current_scope.user' && exit 1; fi",
+            "description": "Block deprecated Phoenix components — context-aware: warns on @current_user in Phoenix 1.8+ projects"
           },
           {
             "type": "command",
-            "command": "if grep -qE 'auto_upload:\\s*true' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  auto_upload: true detected. This requires special handling with handle_progress/3. Most apps should use manual upload (remove auto_upload: true and add a submit button). See phoenix-uploads skill for details.' && exit 1; fi",
-            "description": "Warn on auto_upload usage"
+            "command": "CACHE=\"$(pwd)/.elixir-phoenix-guide-project.json\"; HAS_LV='true'; if [ -f \"$CACHE\" ]; then HAS_LV=$(grep -o '\"has_liveview\":\\s*[a-z]*' \"$CACHE\" 2>/dev/null | grep -o '[a-z]*$'); fi; if [ \"$HAS_LV\" = 'false' ]; then exit 0; fi; if grep -qE 'auto_upload:\\s*true' \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; then echo '⚠️  auto_upload: true detected. This requires special handling with handle_progress/3. Most apps should use manual upload (remove auto_upload: true and add a submit button). See phoenix-uploads skill for details.' && exit 1; fi",
+            "description": "Warn on auto_upload usage (context-aware: skips in API-only projects)"
           },
           {
             "type": "command",
@@ -90,6 +102,26 @@
             "type": "command",
             "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; SCRIPTS_DIR=\"$HOME/.claude/scripts/elixir-phoenix-guide\"; if [ \"$EXT\" = \"ex\" ] || [ \"$EXT\" = \"exs\" ]; then if command -v elixir >/dev/null 2>&1 && [ -f \"$SCRIPTS_DIR/code_quality.exs\" ]; then elixir \"$SCRIPTS_DIR/code_quality.exs\" all \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; exit $?; fi; elif [ \"$EXT\" = \"heex\" ]; then if [ -f \"$SCRIPTS_DIR/detect_template_duplication.sh\" ]; then bash \"$SCRIPTS_DIR/detect_template_duplication.sh\" \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null; exit $?; fi; fi; exit 0",
             "description": "Code quality analysis — duplication, complexity, unused functions (Elixir files) and template duplication (HEEx files)"
+          },
+          {
+            "type": "command",
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" != \"ex\" ] && [ \"$EXT\" != \"exs\" ]; then exit 0; fi; if echo \"$CLAUDE_HOOK_FILE_PATH\" | grep -qE '_test\\.exs$|/test/'; then exit 0; fi; CONTENT=$(cat \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$CONTENT\" | grep -qE '\\.(posts|comments|users|items|entries|tasks|categories|tags|orders|products|messages|notifications|accounts|roles|permissions|memberships|addresses|invoices|images|attachments|events|sessions|tokens)\\b' && ! echo \"$CONTENT\" | grep -qE 'preload|Repo\\.preload|from.*preload|join.*assoc'; then echo '⚠️  Possible missing preload: Association accessor found without a visible preload.' && echo '' && echo '   💡 Fix: Preload associations in your query:' && echo '' && echo '     # In the context function:' && echo '     Repo.all(from p in Post, preload: [:comments, :user])' && echo '' && echo '     # Or after fetch:' && echo '     post |> Repo.preload(:comments)' && echo '' && echo '   Without preload, accessing associations raises Ecto.Association.NotLoaded.' && exit 1; fi; exit 0",
+            "description": "Warn on possible missing preload — association accessed without visible preload"
+          },
+          {
+            "type": "command",
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" != \"ex\" ] && [ \"$EXT\" != \"exs\" ]; then exit 0; fi; CONTENT=$(cat \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$CONTENT\" | grep -qE 'with\\s' && ! echo \"$CONTENT\" | grep -qE 'with.*do.*else|else\\s*do'; then COLLAPSED=$(echo \"$CONTENT\" | tr '\\n' ' '); if echo \"$COLLAPSED\" | grep -qE 'with\\s+[^}]+<-[^}]+do\\s+[^}]+end' && ! echo \"$COLLAPSED\" | grep -qE 'with\\s+[^}]+<-[^}]+do\\s+[^}]+else[^}]+end'; then echo '⚠️  with statement without else clause.' && echo '' && echo '   💡 Fix: Add an else clause to handle errors:' && echo '' && echo '     with {:ok, user} <- fetch_user(id),' && echo '          {:ok, post} <- create_post(user, attrs) do' && echo '       {:ok, post}' && echo '     else' && echo '       {:error, :not_found} -> {:error, :user_not_found}' && echo '       {:error, changeset} -> {:error, changeset}' && echo '     end' && echo '' && echo '   Without else, non-matching values are returned as-is, which can leak internal errors.' && exit 1; fi; fi; exit 0",
+            "description": "Warn on with statement missing else clause — suggests error handling pattern"
+          },
+          {
+            "type": "command",
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" != \"ex\" ] && [ \"$EXT\" != \"exs\" ]; then exit 0; fi; if echo \"$CLAUDE_HOOK_FILE_PATH\" | grep -qE '_test\\.exs$|/test/'; then exit 0; fi; CONTENT=$(cat \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$CONTENT\" | grep -qE 'Ecto\\.Adapters\\.SQL\\.(query|query!)|SQL\\.query'; then if echo \"$CONTENT\" | grep -qE '\".*#\\{.*\\}.*\"|\".*\\$\\{.*\\}.*\"' || echo \"$CONTENT\" | grep -qE 'query.*<>|<>.*query'; then echo '🚫 Raw SQL with string interpolation detected — SQL injection risk!' && echo '' && echo '   💡 Fix: Use parameterized queries:' && echo '' && echo '     # Instead of: Ecto.Adapters.SQL.query(Repo, \"SELECT * FROM users WHERE id = #{id}\")' && echo '     Ecto.Adapters.SQL.query(Repo, \"SELECT * FROM users WHERE id = $1\", [id])' && echo '' && echo '   Always pass user input as parameters, never interpolate into SQL strings.' && exit 2; fi; echo '⚠️  Raw SQL query detected (Ecto.Adapters.SQL.query).' && echo '' && echo '   💡 Prefer Ecto query syntax when possible:' && echo '' && echo '     from(u in User, where: u.id == ^id) |> Repo.one()' && echo '' && echo '   If raw SQL is necessary, always use parameterized queries ($1, $2, ...) and never interpolate user input.' && exit 1; fi; exit 0",
+            "description": "Warn on raw SQL queries — blocks string interpolation (SQL injection), suggests parameterized queries"
+          },
+          {
+            "type": "command",
+            "command": "EXT=\"${CLAUDE_HOOK_FILE_PATH##*.}\"; if [ \"$EXT\" != \"ex\" ]; then exit 0; fi; CACHE=\"$(pwd)/.elixir-phoenix-guide-project.json\"; HAS_LV='true'; if [ -f \"$CACHE\" ]; then HAS_LV=$(grep -o '\"has_liveview\":\\s*[a-z]*' \"$CACHE\" 2>/dev/null | grep -o '[a-z]*$'); fi; if [ \"$HAS_LV\" = 'false' ]; then exit 0; fi; if echo \"$CLAUDE_HOOK_FILE_PATH\" | grep -qE '_live\\.ex$|_live/|live/'; then CONTENT=$(cat \"$CLAUDE_HOOK_FILE_PATH\" 2>/dev/null); if echo \"$CONTENT\" | grep -qE 'Repo\\.(all|one|get|get!|get_by|insert|update|delete|aggregate|exists\\?|preload)'; then echo '⚠️  Context boundary violation: Repo called directly in a LiveView module.' && echo '' && echo '   💡 Fix: Move database access to a context module:' && echo '' && echo '     # Instead of (in LiveView):' && echo '     #   posts = Repo.all(Post)' && echo '' && echo '     # Create a context function:' && echo '     #   defmodule MyApp.Blog do' && echo '     #     def list_posts, do: Repo.all(Post)' && echo '     #   end' && echo '' && echo '     # Call from LiveView:' && echo '     #   posts = Blog.list_posts()' && echo '' && echo '   LiveViews should never access Repo directly — use context functions to maintain boundaries.' && exit 1; fi; fi; exit 0",
+            "description": "Warn on Repo calls in LiveView modules — context boundary violation (context-aware: skips in API-only projects)"
           }
         ]
       }

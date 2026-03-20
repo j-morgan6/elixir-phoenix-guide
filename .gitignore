@@ -9,6 +9,9 @@
 *.tmp
 *.bak
 
+# Project detection cache (generated per-project at session start)
+.elixir-phoenix-guide-project.json
+
 # Analysis and feedback documents (kept for historical reference but not tracked)
 # Note: These files are stored outside this repo
 docs/analysis/

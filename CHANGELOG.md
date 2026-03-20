@@ -8,7 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Smart enforcement with context-aware hooks (v2.2.0)
+- Expanded domains: security hooks, deployment gotchas, channels, telemetry, JSON API (v2.3.0)
+
+## [2.2.0] - 2026-03-20
+
+### Added
+- **Project Detection System** — SessionStart hook that parses `mix.exs` and caches project characteristics:
+  - Phoenix version (1.7 vs 1.8+ Scope struct detection)
+  - LiveView presence (API-only vs full-stack)
+  - Ecto adapter (Postgres, SQLite, MySQL, or none)
+  - Oban presence
+  - Cache written to `.elixir-phoenix-guide-project.json` in project root
+- **`detect_project.sh` script** — project detection engine used by SessionStart hook
+- **4 new PostToolUse validation hooks:**
+  - **missing-preload** — warns when association accessors are found without visible preload calls
+  - **missing-error-clause** — warns when `with` statements lack an `else` clause for error handling
+  - **raw-sql-warning** — blocks string interpolation in raw SQL (SQL injection), warns on all raw SQL usage with parameterized query suggestions
+  - **context-boundary-violation** — warns when `Repo` is called directly in LiveView modules instead of through context functions
+
+### Changed
+- **Hook count:** 15 → 21 (1 SessionStart + 4 PostToolUse + 1 context-aware upgrade)
+- **All warning hooks upgraded with auto-fix suggestions:**
+  - **nested-if-else** — now suggests `case` tuple matching and multi-clause functions with copy-pasteable examples
+  - **inefficient-enum** — now suggests `for` comprehensions and `Enum.reduce` with examples
+  - **string-concatenation** — now suggests IO lists and `Enum.join` with examples
+  - **missing-impl** — now shows exact `@impl true` placement with example
+  - **hardcoded-paths** — now shows `Application.get_env` migration pattern
+  - **hardcoded-sizes** — now shows config-based size limit pattern
+- **Context-aware hooks** — hooks now read `.elixir-phoenix-guide-project.json` cache:
+  - **skill-reminder** — notes API-only projects when LiveView is absent
+  - **missing-impl** — skips LiveView callback checks in API-only projects
+  - **deprecated-components** — warns on `@current_user` in Phoenix 1.8+ projects (should use `@current_scope`)
+  - **auto-upload-warning** — skips entirely in API-only projects
+  - **context-boundary-violation** — skips in API-only projects
+- **install.sh** — now installs `detect_project.sh` alongside other analysis scripts
+
+### Impact
+- Hooks adapt to project stack — API-only projects won't see irrelevant LiveView warnings
+- Phoenix 1.8 users get Scope-aware guidance automatically
+- PostToolUse validation catches architectural issues (context violations, missing preloads) after code is written
+- Auto-fix suggestions reduce round-trips — developers can copy-paste the suggested fix directly
+- Project detection runs once per session and caches results for all hooks to read
 
 ## [2.1.0] - 2026-03-19
 
@@ -246,6 +286,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.2.0 | 2026-03-20 | Smart enforcement — project detection, context-aware hooks, PostToolUse validation, auto-fix suggestions |
 | v2.1.0 | 2026-03-19 | Additional skills & polish — auth, changesets, PubSub, authorization, nested associations, migration safety |
 | v2.0.0 | 2026-03-16 | Automation — code duplication, complexity, unused functions, template duplication |
 | v1.4.0 | 2026-03-13 | Competitive parity — OTP skill, Oban skill, 3 new hooks, subagent enforcement |
@@ -267,9 +308,6 @@ Install using any of the three methods in README.md. No migration needed.
 
 ## Future Versions (Planned)
 
-### v2.2.0 - Smart Enforcement
-**Focus:** Context-aware hooks, project detection, PostToolUse validation
-
 ### v2.3.0 - Expanded Domains
 **Focus:** Security hooks, deployment gotchas, channels, telemetry, JSON API
 
@@ -278,7 +316,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.3.2...v1.4.0

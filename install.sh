@@ -79,7 +79,7 @@ cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
 if command -v jq &> /dev/null; then
   jq -s '.[0] * .[1]' "$SETTINGS_FILE" "$SOURCE_DIR/hooks-settings.json" > "$SETTINGS_FILE.tmp"
   mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-  echo -e "${GREEN}✓ Installed 21 hooks (merged with jq)${NC}"
+  echo -e "${GREEN}✓ Installed 27 hooks (merged with jq)${NC}"
 else
   echo -e "${YELLOW}⚠ jq not found. Please manually merge hooks-settings.json into ~/.claude/settings.json${NC}"
   echo -e "${YELLOW}  See INSTALL-HOOKS.md for instructions${NC}"

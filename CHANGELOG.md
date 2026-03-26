@@ -8,7 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Expanded domains: security hooks, deployment gotchas, channels, telemetry, JSON API (v2.3.0)
+- Reactive intelligence: error decoder, test analyzer, Credo integration (v3.0.0)
+
+## [2.3.0] - 2026-03-26
+
+### Added
+- **`security-essentials` skill** — 7 RULES covering atom exhaustion from user input, SQL injection in fragments, open redirects, XSS via raw/1, sensitive data logging, timing-safe comparison, dependency auditing
+- **`deployment-gotchas` skill** — 7 RULES covering runtime.exs for secrets, release migrations, PHX_HOST/PHX_SERVER, asset deployment, System.get_env!/1, health endpoints, production log levels
+- **`phoenix-channels-essentials` skill** — 6 RULES covering socket authentication in connect/3, topic authorization in join/3, handle_in/push/broadcast patterns, thin channels, Presence, reply tuples
+- **`telemetry-essentials` skill** — 6 RULES covering structured logging, telemetry handler attachment, Ecto telemetry events, LiveDashboard, metadata tagging, production log levels
+- **`phoenix-json-api` skill** — 7 RULES covering :api pipeline, structured JSON errors, pagination, URL versioning, FallbackController, Bearer token auth, json/2 helper
+- **6 new security hooks:**
+  - **atom-from-user-input** (blocking) — blocks `String.to_atom/1` with whitelist fix suggestion
+  - **unparameterized-sql-fragment** (blocking) — blocks string interpolation in Ecto `fragment` with `?` parameter fix
+  - **unsafe-redirect** (blocking) — blocks redirect to user-controlled URLs with whitelist/verified route fix
+  - **raw-html-warning** (warning) — warns on `raw/1` and `Phoenix.HTML.raw/1` with sanitization suggestion
+  - **sensitive-logging** (warning) — warns when Logger calls include password/token/secret/api_key variables
+  - **timing-unsafe-compare** (warning) — warns on `==` with tokens/secrets, suggests `Plug.Crypto.secure_compare/2`
+
+### Changed
+- **Skill count:** 14 → 19 (5 new domain skills)
+- **Hook count:** 21 → 27 (6 new security hooks)
+- **SubagentStart rules** — expanded with Security, Channel, Telemetry, Deployment, and JSON API rule sets
+- **CLAUDE.md.template** — updated with invocation instructions for all 19 skills
+
+### Impact
+- Security enforcement hooks block insecure code patterns before they land — atom exhaustion, SQL injection, XSS, and open redirects are now caught automatically
+- Five new domain skills cover common Phoenix development scenarios beyond core LiveView/Ecto
+- Subagents now receive security, channels, telemetry, deployment, and JSON API rules
 
 ## [2.2.0] - 2026-03-20
 

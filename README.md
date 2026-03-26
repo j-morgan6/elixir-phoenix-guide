@@ -1,14 +1,14 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 2.2.0 | [Changelog](CHANGELOG.md)
+**Version:** 2.3.0 | [Changelog](CHANGELOG.md)
 
 An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, context-aware hooks, automated code quality analysis, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v2.2.0 Released!** Smart enforcement — hooks now adapt to your project stack, PostToolUse validation catches architectural issues, and all warnings include copy-pasteable fix suggestions. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v2.3.0 Released!** Expanded domains — security enforcement hooks, deployment gotchas, Phoenix Channels, telemetry/observability, and JSON API skills. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 
-### Skills (14 essential files)
+### Skills (19 essential files)
 Consolidated domain expertise with enforced patterns:
 - **elixir-essentials** - Core Elixir patterns: pattern matching, pipes, with statements, error handling
 - **phoenix-liveview-essentials** - Complete LiveView guide: lifecycle, events, rendering phases, state management
@@ -24,12 +24,17 @@ Consolidated domain expertise with enforced patterns:
 - **phoenix-pubsub-patterns** - Real-time updates: subscriptions, broadcasting from contexts, topic naming
 - **phoenix-authorization-patterns** - Access control: server-side authz, ownership, policy modules, scoped queries
 - **ecto-nested-associations** - Nested data: cast_assoc, cast_embed, Ecto.Multi, cascades, FK indexes
+- **security-essentials** - Security enforcement: atom exhaustion, SQL injection, XSS, open redirects, timing attacks
+- **deployment-gotchas** - Deployment pitfalls: runtime.exs, release migrations, PHX_HOST, health checks, secrets
+- **phoenix-channels-essentials** - Channels: socket auth, topic authorization, Presence, handle_in patterns
+- **telemetry-essentials** - Observability: structured logging, :telemetry, Ecto events, LiveDashboard, metrics
+- **phoenix-json-api** - JSON APIs: :api pipeline, FallbackController, pagination, versioning, Bearer auth
 
 Each skill includes a RULES section with 6-11 non-negotiable patterns that must be followed.
 
 **Note on auto_suggest metadata:** Skills include `auto_suggest: true` and `file_patterns` metadata for future Claude Code enhancements. These fields are not currently active in the Claude Code runtime but are included for forward compatibility.
 
-### Hooks (21 rules in settings.json)
+### Hooks (27 rules in settings.json)
 Context-aware enforcement rules that adapt to your project stack:
 
 **SessionStart (runs once per session):**
@@ -42,6 +47,9 @@ Context-aware enforcement rules that adapt to your project stack:
 - **static-paths-validator** - Blocks file references not in static_paths()
 - **deprecated-components** - Blocks deprecated Phoenix components — context-aware: warns on @current_user in Phoenix 1.8+ projects
 - **dangerous-operations** - Blocks mix ecto.reset, git push --force, MIX_ENV=prod
+- **atom-from-user-input** - Blocks String.to_atom/1 — atom table exhaustion risk
+- **unparameterized-sql-fragment** - Blocks string interpolation in Ecto fragment — SQL injection
+- **unsafe-redirect** - Blocks redirect to user-controlled URLs — open redirect risk
 
 **Warnings (exit 1 - shows warning with fix suggestion):**
 - **nested-if-else** - Warns with case/multi-clause function fix
@@ -50,6 +58,9 @@ Context-aware enforcement rules that adapt to your project stack:
 - **auto-upload-warning** - Warns when auto_upload: true is detected (skips in API-only projects)
 - **debug-statements** - Warns on IO.inspect, dbg(), IO.puts outside test files
 - **migration-safety** - Checks for missing FK indexes, on_delete strategies, unsafe column operations
+- **raw-html-warning** - Warns on raw/1 usage — XSS risk from unescaped HTML
+- **sensitive-logging** - Warns on password/token/secret/api_key in Logger calls
+- **timing-unsafe-compare** - Warns on == with tokens/secrets — suggests Plug.Crypto.secure_compare/2
 
 **PostToolUse (runs after file write):**
 - **code-quality-analysis** - Detects code duplication, ABC complexity >30, unused private functions (.ex/.exs) and template duplication (.heex)
@@ -62,7 +73,7 @@ Context-aware enforcement rules that adapt to your project stack:
 - **security-audit** - Suggests mix deps.audit/hex.audit/sobelow when mix.exs changes
 
 ### Subagent Enforcement
-- **SubagentStart hook** - Injects condensed rules from all 14 skills into every spawned subagent, ensuring code written by subagents follows the same standards
+- **SubagentStart hook** - Injects condensed rules from all 19 skills into every spawned subagent, ensuring code written by subagents follows the same standards
 
 ### Analysis Scripts (4 scripts)
 Automated code quality analysis tools:
@@ -121,7 +132,7 @@ If you already have the plugin installed:
 - 4 new PostToolUse validation hooks: missing-preload, missing-error-clause, raw-sql-warning, context-boundary-violation
 - All warning hooks upgraded with copy-pasteable auto-fix suggestions
 - Context-aware: API-only projects skip LiveView hooks, Phoenix 1.8+ gets Scope guidance
-- Total: 14 skills, 21 hooks, 4 analysis scripts, 4 agent docs
+- Total: 19 skills, 27 hooks, 4 analysis scripts, 4 agent docs
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 

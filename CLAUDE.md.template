@@ -81,6 +81,11 @@ skill from the elixir-phoenix-guide plugin:
 - **PubSub real-time updates** → invoke `elixir-phoenix-guide:phoenix-pubsub-patterns`
 - **Authorization and access control** → invoke `elixir-phoenix-guide:phoenix-authorization-patterns`
 - **Nested associations (cast_assoc, Ecto.Multi)** → invoke `elixir-phoenix-guide:ecto-nested-associations`
+- **Security-sensitive code (auth, tokens, redirects)** → invoke `elixir-phoenix-guide:security-essentials`
+- **Deployment or release configuration** → invoke `elixir-phoenix-guide:deployment-gotchas`
+- **Phoenix Channels (non-LiveView real-time)** → invoke `elixir-phoenix-guide:phoenix-channels-essentials`
+- **Telemetry, logging, observability** → invoke `elixir-phoenix-guide:telemetry-essentials`
+- **JSON API endpoints** → invoke `elixir-phoenix-guide:phoenix-json-api`
 
 This is not optional. Do not rationalize skipping this step. Invoke the skill, read the
 rules section, then proceed with implementation.
@@ -138,6 +143,11 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 12. **phoenix-pubsub-patterns** - PubSub subscriptions, broadcasting from contexts, topic naming
 13. **phoenix-authorization-patterns** - Server-side authz, ownership, policy modules, scoped queries
 14. **ecto-nested-associations** - cast_assoc, cast_embed, Ecto.Multi, cascades, FK indexes
+15. **security-essentials** - Atom exhaustion, SQL injection, XSS, open redirects, timing attacks
+16. **deployment-gotchas** - runtime.exs, release migrations, PHX_HOST, health checks, secrets
+17. **phoenix-channels-essentials** - Socket auth, topic authorization, Presence, handle_in patterns
+18. **telemetry-essentials** - Structured logging, :telemetry, Ecto events, LiveDashboard, metrics
+19. **phoenix-json-api** - :api pipeline, FallbackController, pagination, versioning, Bearer auth
 
 ## Hooks
 

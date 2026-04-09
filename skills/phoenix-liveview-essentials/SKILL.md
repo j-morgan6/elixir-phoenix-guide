@@ -14,7 +14,7 @@ auto_suggest: true
 ## RULES — Follow these with no exceptions
 
 1. **Always add @impl true** before every callback (mount, handle_event, handle_info, render)
-2. **Initialize ALL assigns in mount/3** — never access uninitialized assigns in render/1
+2. **Initialize assigns before they're accessed in render/1** — use mount/3 for static defaults, handle_params/3 for URL-dependent assigns (pagination, filters, sorting)
 3. **Check connected?(socket)** before PubSub subscriptions, timers, or side effects
 4. **Use Map.get(assigns, :key, default)** for optional assigns in helper functions
 5. **Return proper tuples** — `{:ok, socket}` from mount, `{:noreply, socket}` from handle_event
@@ -41,7 +41,7 @@ auto_suggest: true
 
 **Common Bug:** Accessing uninitialized assigns during static render crashes with `KeyError`.
 
-**Solution:** Initialize ALL assigns in mount/3 before using them.
+**Solution:** Initialize assigns before render — use mount/3 for static defaults, handle_params/3 for URL-dependent state.
 
 ---
 
@@ -52,7 +52,7 @@ auto_suggest: true
 ```elixir
 @impl true
 def mount(_params, _session, socket) do
-  # Initialize ALL assigns first
+  # Initialize static defaults here; URL-dependent assigns go in handle_params
   socket =
     socket
     |> assign(:user, nil)
@@ -396,7 +396,7 @@ def render(assigns) do
 end
 ```
 
-### ✅ Fix: Initialize in mount
+### ✅ Fix: Initialize before render (mount or handle_params)
 
 ```elixir
 @impl true

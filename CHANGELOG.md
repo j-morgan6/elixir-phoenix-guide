@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - Reactive intelligence: error decoder, test analyzer, Credo integration (v3.0.0)
 
+## [2.3.1] - 2026-04-09
+
+### Fixed
+- **`phoenix-liveview-essentials`** — Relaxed "Initialize ALL assigns in mount/3" rule to acknowledge `handle_params/3` as the idiomatic place for URL-dependent assigns (pagination, filters, sorting)
+- **`testing-essentials`** — Replaced strict DataCase/ConnCase rule with guidance to follow the project's existing test setup patterns (e.g. shared helpers like `setup :store_test_session`) instead of inlining boilerplate
+
 ## [2.3.0] - 2026-03-26
 
 ### Added

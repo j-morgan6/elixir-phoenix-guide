@@ -9,7 +9,7 @@
       "name": "elixir-phoenix-guide",
       "source": "./",
       "description": "Essential Elixir and Phoenix LiveView development guide with enforced skills, hooks, and patterns for idiomatic code",
-      "version": "2.3.0"
+      "version": "2.3.1"
     }
   ]
 }

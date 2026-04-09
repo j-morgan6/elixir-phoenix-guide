@@ -11,7 +11,7 @@ auto_suggest: true
 
 ## RULES — Follow these with no exceptions
 
-1. **Use `DataCase` for database tests, `ConnCase` for LiveView/controller tests** — never mix them
+1. **Follow the project's existing test setup patterns** (e.g. shared setup helpers like `setup :store_test_session`) — don't inline DataCase/ConnCase boilerplate that the project already abstracts away
 2. **Test both happy path AND error/invalid cases** for every function
 3. **Use `async: true` only when safe** — safe: pure functions, changesets, helpers; unsafe: DB contexts with shared rows, LiveView, `Application.put_env`, external services
 4. **Define test data in fixtures** (`test/support/`) — never build it inline across multiple tests

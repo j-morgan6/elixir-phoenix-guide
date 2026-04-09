@@ -1,10 +1,10 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 2.3.0 | [Changelog](CHANGELOG.md)
+**Version:** 2.3.1 | [Changelog](CHANGELOG.md)
 
 An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, context-aware hooks, automated code quality analysis, and agent documentation that actively guide and validate your Elixir development workflow.
 
-> **v2.3.0 Released!** Expanded domains — security enforcement hooks, deployment gotchas, Phoenix Channels, telemetry/observability, and JSON API skills. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v2.3.1 Released!** Corrected LiveView assigns and test setup guidance based on community feedback. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What's Included
 

@@ -47,7 +47,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       PHX_VERSION: "1.8.15"
-      CI_APP: ${{ github.workspace }}/../ci_app
+      # Inside the workspace: actions/cache rejects paths containing "..".
+      CI_APP: ${{ github.workspace }}/.ci/ci_app
     steps:
       - uses: actions/checkout@v5
 
@@ -72,6 +73,7 @@ jobs:
       - name: Generate Phoenix app
         run: |
           mix archive.install hex phx_new "$PHX_VERSION" --force
+          mkdir -p "$(dirname "$CI_APP")"
           cd "$(dirname "$CI_APP")"
           # 'y' answers "directory exists, continue?" when the deps cache was restored
           printf 'y\n' | mix phx.new ci_app --no-install --no-ecto --no-mailer --no-dashboard --no-gettext

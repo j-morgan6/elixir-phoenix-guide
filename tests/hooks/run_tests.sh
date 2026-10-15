@@ -48,8 +48,11 @@ expect_review() { # name json pattern
 # Silent pass: exit 0, no stdout, no stderr.
 expect_clean() { # name script json
   run_hook "$2" "$3"
-  [ "$RC" -eq 0 ] && [ -z "$OUT" ] && [ -z "$ERR" ] || { bad "$1" "exit $RC stdout=[$OUT] stderr=[$ERR] (want silent exit 0)"; return; }
-  ok
+  if [ "$RC" -eq 0 ] && [ -z "$OUT" ] && [ -z "$ERR" ]; then
+    ok
+  else
+    bad "$1" "exit $RC stdout=[$OUT] stderr=[$ERR] (want silent exit 0)"
+  fi
 }
 
 # The pattern must appear nowhere in the hook's output.

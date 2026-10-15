@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-10-15
+
+### Added
+- **OpenAI Codex support for the skills** (contributed by Carey Janecka, #2): a Codex plugin manifest (`.codex-plugin/plugin.json`) and `install-codex.sh`, which installs every skill into `${CODEX_HOME:-~/.codex}/skills`. Hooks remain Claude Code only.
+  - Adapted to 2.5.0: whole skill directories are copied (several skills link to reference files), reinstalling replaces stale files, and the `code-quality` skill's `${CLAUDE_SKILL_DIR}` script paths are pointed at the checkout's `scripts/`.
+- `tests/packaging/run_tests.sh`: the version in `VERSION` and both plugin manifests must agree; `install-codex.sh` must install every skill, every reference file and resolvable links.
+
 ## [2.5.0] - 2026-10-15
 
 Every skill re-verified against the library source and Phoenix 1.8's generators (Elixir 1.20.2, Phoenix 1.8.15, LiveView 1.2.12, phoenix_html 4.3, Ecto 3.14.2, Oban 2.24.2, Req 0.7.5, Plug 1.20.3). Each SKILL.md now opens with a "Verified against" line.
@@ -428,6 +435,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.5.1 | 2026-10-15 | OpenAI Codex support for the skills (manifest + installer) |
 | v2.5.0 | 2026-10-15 | Full re-verification against Elixir 1.20 / Phoenix 1.8.15 / LiveView 1.2 / Ecto 3.14 / Oban 2.24 — scoped contexts, security fixes, changed-lines-only hooks with block/review tiers |
 | v2.4.0 | 2026-07-05 | Plugin-native hooks, Phoenix 1.8 accuracy fixes, differentiated skill triggers |
 | v2.3.1 | 2026-04-09 | handle_params assigns and test-helper guidance relaxed |
@@ -452,7 +460,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.3.0...v2.3.1

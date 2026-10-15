@@ -10,7 +10,7 @@ plugin only because Claude Code installs the whole repository.
 
 Release checklist:
 
-1. `bash tests/hooks/run_tests.sh && bash tests/code_quality/run_tests.sh`
+1. `bash tests/hooks/run_tests.sh && bash tests/code_quality/run_tests.sh && bash tests/packaging/run_tests.sh`
 2. `check_snippets.exs` → 0 problems
-3. Bump `VERSION`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; add the CHANGELOG entry
+3. Bump `VERSION`, `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` (the packaging test fails if they disagree); add the CHANGELOG entry
 4. `dev/sync_copilot.sh`, review `cd copilot && git diff`, bump the Copilot CHANGELOG

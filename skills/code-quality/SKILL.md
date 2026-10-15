@@ -31,7 +31,7 @@ On-demand checks for duplication and complexity. Nothing here runs automatically
 
 ## Running the analyzer
 
-The scripts ship with the plugin. They need only `elixir` (no deps, no compilation) and exit 1 when they find something.
+The scripts ship with the plugin. They need only `elixir` (no deps, no compilation) and exit 1 when they find something. `${CLAUDE_SKILL_DIR}` is this skill's own directory; Claude Code fills it in, and in other agents it means the folder containing this file.
 
 ```bash
 # Whole project

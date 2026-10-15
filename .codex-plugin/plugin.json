@@ -1,0 +1,40 @@
+{
+  "name": "elixir-phoenix-guide",
+  "version": "2.5.1",
+  "description": "Elixir and Phoenix development guide: skills checked against Phoenix 1.8 generators for idiomatic, secure Elixir, LiveView, Ecto, OTP and Oban code",
+  "author": {
+    "name": "Joseph Morgan",
+    "url": "https://github.com/j-morgan6"
+  },
+  "homepage": "https://github.com/j-morgan6/elixir-phoenix-guide",
+  "repository": "https://github.com/j-morgan6/elixir-phoenix-guide",
+  "license": "MIT",
+  "keywords": [
+    "elixir",
+    "phoenix",
+    "liveview",
+    "ecto",
+    "optimization",
+    "best-practices"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Elixir Phoenix Guide",
+    "shortDescription": "Elixir and Phoenix development guidance for Codex",
+    "longDescription": "Skills for idiomatic Elixir, Phoenix LiveView, Ecto, OTP, Oban, testing, security, deployment, channels, telemetry, and JSON API work in Codex.",
+    "developerName": "Joseph Morgan",
+    "category": "Engineering",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/j-morgan6/elixir-phoenix-guide",
+    "brandColor": "#4B275F",
+    "defaultPrompt": [
+      "Review this Phoenix change",
+      "Build a LiveView feature",
+      "Fix this Ecto changeset"
+    ],
+    "screenshots": []
+  }
+}

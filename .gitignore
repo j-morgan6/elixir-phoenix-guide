@@ -5,6 +5,9 @@
 .vscode/
 .idea/
 
+# Python virtual environments
+.venv/
+
 # Temporary files
 *.tmp
 *.bak

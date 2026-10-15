@@ -45,6 +45,8 @@ rewrite_links() {
   done <<< "$SUPPORTING"
   # shellcheck disable=SC2016 # literal ${CLAUDE_SKILL_DIR} in the pattern
   sed_args+=(-e 's#\${CLAUDE_SKILL_DIR}/\.\./\.\./scripts/#scripts/#g')
+  # shellcheck disable=SC2016 # literal ${CLAUDE_SKILL_DIR} in the pattern
+  sed_args+=(-e 's# `\${CLAUDE_SKILL_DIR}` is this skill.s own directory[^.]*\.##')
   sed "${sed_args[@]}"
 }
 

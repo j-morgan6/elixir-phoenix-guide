@@ -1,8 +1,8 @@
-# Elixir Phoenix Guide for Claude Code
+# Elixir Phoenix Guide for Claude Code and Codex
 
 [Changelog](CHANGELOG.md)
 
-A Claude Code plugin that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 19 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
+A Claude Code plugin (with Codex support for the skills) that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 19 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
 
 > **v2.5.0** — every skill re-verified against Elixir 1.20, Phoenix 1.8.15, LiveView 1.2.12, Ecto 3.14 and Oban 2.24: Phoenix 1.8 scopes on every context call, secure upload/PubSub/API examples, forms and async in LiveView, and hooks that only report the lines Claude changed. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -83,6 +83,18 @@ git clone https://github.com/j-morgan6/elixir-phoenix-guide.git
 cd elixir-phoenix-guide
 ./install.sh
 ```
+
+### Codex
+
+The skills also work in OpenAI Codex (hooks are Claude Code only). Either load the repo as a Codex plugin through `.codex-plugin/plugin.json`, or install the skills for the current user from a checkout:
+
+```bash
+git clone https://github.com/j-morgan6/elixir-phoenix-guide.git
+cd elixir-phoenix-guide
+./install-codex.sh
+```
+
+This copies every skill directory (including its reference files) into `${CODEX_HOME:-~/.codex}/skills` and points the `code-quality` skill at this checkout's `scripts/`, so keep the checkout. Re-run it after `git pull` to update, then restart Codex.
 
 ### Updating to Latest Version
 
@@ -186,7 +198,9 @@ elixir-phoenix-guide/
 ├── INSTALL-HOOKS.md                   # Hook behavior reference
 ├── CLAUDE.md.template                 # Project-specific instructions template
 ├── install.sh                         # Optional extras: CLAUDE.md template + legacy cleanup
-├── VERSION                            # Plugin version (with .claude-plugin/plugin.json)
+├── install-codex.sh                   # Installs the skills for OpenAI Codex
+├── .codex-plugin/plugin.json          # Codex plugin manifest
+├── VERSION                            # Plugin version (also in both plugin.json manifests)
 ├── skills/                            # 19 skills; some carry reference files
 │   ├── elixir-essentials/             # SKILL.md, project-structure.md
 │   ├── phoenix-liveview-essentials/   # SKILL.md, checklist.md, js-interop.md
@@ -205,7 +219,8 @@ elixir-phoenix-guide/
 │       └── check_file.sh              # PostToolUse (Write|Edit|MultiEdit)
 ├── tests/
 │   ├── hooks/run_tests.sh             # Hook test harness (fixture-based)
-│   └── code_quality/run_tests.sh      # code_quality.exs test harness
+│   ├── code_quality/run_tests.sh      # code_quality.exs test harness
+│   └── packaging/run_tests.sh         # Version agreement + install-codex.sh checks
 └── dev/                               # Maintainer tools (not used at runtime)
     ├── check_snippets.exs             # Parses every elixir/heex block in skills/
     └── sync_copilot.sh                # Regenerates the GitHub Copilot port

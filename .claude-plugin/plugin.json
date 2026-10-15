@@ -1,6 +1,6 @@
 {
   "name": "elixir-phoenix-guide",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Essential Elixir and Phoenix LiveView development guide with enforced skills, hooks, and patterns for idiomatic code",
   "author": {
     "name": "Joseph Morgan",
@@ -9,5 +9,12 @@
   "homepage": "https://github.com/j-morgan6/elixir-phoenix-guide",
   "repository": "https://github.com/j-morgan6/elixir-phoenix-guide",
   "license": "MIT",
-  "keywords": ["elixir", "phoenix", "liveview", "ecto", "optimization", "best-practices"]
+  "keywords": [
+    "elixir",
+    "phoenix",
+    "liveview",
+    "ecto",
+    "optimization",
+    "best-practices"
+  ]
 }

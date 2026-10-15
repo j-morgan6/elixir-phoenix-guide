@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-15
+
+Every skill re-verified against the library source and Phoenix 1.8's generators (Elixir 1.20.2, Phoenix 1.8.15, LiveView 1.2.12, phoenix_html 4.3, Ecto 3.14.2, Oban 2.24.2, Req 0.7.5, Plug 1.20.3). Each SKILL.md now opens with a "Verified against" line.
+
+### Fixed — examples that didn't compile, render or work
+- `<:actions>` inside `<.form>` (a slot `form/1` doesn't declare) silently dropped the submit button in four places; forms now put `<.button>` inside and always carry an `id`.
+- Removed `text_to_html` (gone in phoenix_html 4), the undefined `put_password_hash`, `<.label>` (not in 1.8 core components), an unassigned `@form`, and a `def … do: # …` body that didn't parse.
+- Telemetry handler without a catch-all clause (telemetry detaches it on the first unmatched event); local captures replaced with `&__MODULE__.handle_event/4`.
+- `config :logger, :console` (ignored when `:default_formatter` is set, as in Phoenix 1.8) replaced with `:default_formatter` / `:default_handler`.
+- Removed lines that overwrote `Plug.RequestId`'s request id in Logger metadata.
+- Upload tests now assert on `render_upload/3`'s return value; test examples use real fixtures, `ConnCase` where `conn` is needed, and 1.8 routes.
+- Ecto: soft delete that silently did nothing, `Repo.one` "get first", an insert_all test that could never match, an email-downcase test with no downcase.
+
+### Fixed — Phoenix 1.8 `phx.gen.auth` accuracy
+- `on_mount(:require_authenticated, …)` (the plug and `live_session` keep the `_user` name); `get_user_by_session_token/1` returns `{user, inserted_at}`; `@current_scope` is `nil` for guests.
+- Log-in stays reachable for logged-in users (sudo mode re-authenticates there); no guest-only `live_session`.
+- Registration is email-only (magic link): custom fields go in a new `registration_changeset/3` that pipes `email_changeset/3`, so changing email keeps working; generated fixtures are reused instead of rewritten.
+- Password length uses phx.gen.auth's `min: 12, max: 72` plus `count: :bytes` (bcrypt's limit is bytes).
+
+### Security
+- Every context call takes `%Scope{}` first, as the 1.8 generators do; no record is loaded or deleted by a client id alone (IDOR). Authorization also runs in `handle_params`.
+- New rule: never `cast` foreign keys or privileged fields (`:user_id`, `:role`, `:confirmed_at`…).
+- PubSub topics are per-scope (`"user:#{id}:posts"`), not global.
+- Uploads: stored extension comes from an allowlist matched against the file's magic bytes, never the client (stored-XSS fix); downloads are scoped by record id with an allowlisted content type and `attachment` disposition.
+- Open redirects: the risk is `redirect(external:)`, not `to:` (which Phoenix already restricts). SQL-injection guidance now covers user-chosen columns and `Repo.query` interpolation.
+- JSON API: hashed, expiring bearer tokens; rate-limited login; safe `per_page` parsing; stable ordering and keyset pagination.
+- Channels: socket token only for logged-in users, explicit `max_age`, disconnect on logout. LiveDashboard behind `dev_routes` or auth. Health checks no longer leak error details. Real CSP example (Phoenix's default only sets `base-uri`/`frame-ancestors`).
+
+### Changed — skills
+- `Repo.transact/2` replaces `Repo.transaction/2`; streams are the default for collections; HEEx uses `{…}`, `:for` and `:if`; one logging rule across skills (filterable values in metadata).
+- **phoenix-liveview-essentials**: forms (`to_form`, `used_input?`, `phx-debounce`), `assign_async`/`start_async`/`stream_async`, JS commands, colocated hooks, `:key`, `<.portal>`; new `js-interop.md`.
+- **elixir-essentials** cut from 425 to ~175 lines and gains a "Modern Elixir (1.18+)" section (type checker, `JSON`, `dbg`, `Process.set_label/1`).
+- **otp-essentials**: `call` by default, `:protected` ETS, PartitionSupervisor, `GenServer.reply/2`, task timeouts.
+- **oban-essentials**: unique `fields` keep `:worker`, `states: :incomplete`, Oban 2.24 top-level `cron:`/`pruner:`/`lifeline:` config, transactional enqueue, capped snoozes, SSRF-safe HTTP worker, OSS vs Pro.
+- **ecto-***: `timestamps(type: :utc_datetime)`, correct upserts (`returning: true`), escaped `ilike`, reversible migrations, case-insensitive unique email, `inputs_for` sort/drop params; `cast_assoc` lives only in ecto-nested-associations.
+- **deployment-gotchas**: `mix phx.gen.release --docker`, Dockerfile order, conditional `PHX_SERVER`, SSL, rolling-deploy migration order, Oban queues per node.
+- **telemetry-essentials**: metric-tag cardinality, `:telemetry_test`, OpenTelemetry, project telemetry wrappers.
+- **testing-essentials**: Mox with `verify_on_exit!`, `Req.Test`, LiveView async/navigation helpers, LazyHTML, `parameterize:`, sandbox allowances.
+- Reference docs moved next to the skills that use them, where Claude can actually read them: `ecto-essentials/reference.md`, `phoenix-liveview-essentials/checklist.md`, `elixir-essentials/project-structure.md`, `testing-essentials/reference.md` (`docs/reference/` removed; `ecto-conventions.md` folded into the Ecto skills).
+- Skill descriptions rewritten as "Use when… Not for…" so overlapping skills don't compete.
+
+### Changed — hooks and scripts
+- File checks report **only the lines the tool call changed** (Edit: where `new_string` landed; Write: `git diff`), evaluated with whole-file context. Comments and `@doc` text are ignored; `deps/`, `_build/`, `node_modules/` are skipped.
+- Two tiers: near-certain bugs block (exit 2); heuristics arrive as advisory `additionalContext`.
+- `@impl` no longer flags later clauses of a multi-clause callback; open-redirect check targets `external:`; `Repo.query!` interpolation and per-table migration indexes are checked; `form_for` has a word boundary; Logger only flags interpolated secrets; `push_redirect` flagged.
+- Bash guard parses each command segment: `MIX_ENV=test mix ecto.reset` and commit messages/greps mentioning it are allowed; `mix ecto.drop`, `-uf`, `+refspec`, `git -C … push --force` are caught; opt out with `EPG_ALLOW=force_push|ecto_reset|ecto_drop`; only active in Elixir projects.
+- Matcher covers `MultiEdit` (older Claude Code versions).
+- SessionStart reports locked versions from `mix.lock` (plus the requirement), detects scopes from the code rather than the version, handles umbrellas and plain libraries, warns when `jq` is missing, and reads the plugin version from `VERSION`.
+- `code_quality.exs`: the unused-function detector (wrong on `?`/`!` names and function components) is removed — use `mix compile --warnings-as-errors` and `mix xref`; "ABC" renamed to branch complexity; duplication now compares normalized bodies across the whole tree. `run_analysis.sh` works at an umbrella root.
+- Hook test suite grew from 33 to 134 checks.
+
+### Removed
+- `file_patterns` and `auto_suggest` frontmatter (Claude Code never read them).
+- Version strings outside `VERSION` and `plugin.json`.
+
+### Maintainer
+- `dev/check_snippets.exs` parses every `elixir`/`heex` block in the skills and flags known regressions; `dev/sync_copilot.sh` (moved from `scripts/`) now also regenerates the Copilot `AGENTS.md` from skill reference files.
+- `install.sh` asks before deleting a legacy install.
+- `CLAUDE.md.template` no longer points at nonexistent `docs/reference/` paths and recommends `compile_env`/`runtime.exs` correctly.
+
 ## [2.4.0] - 2026-07-05
 
 ### Fixed
@@ -368,6 +428,10 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.5.0 | 2026-10-15 | Full re-verification against Elixir 1.20 / Phoenix 1.8.15 / LiveView 1.2 / Ecto 3.14 / Oban 2.24 — scoped contexts, security fixes, changed-lines-only hooks with block/review tiers |
+| v2.4.0 | 2026-07-05 | Plugin-native hooks, Phoenix 1.8 accuracy fixes, differentiated skill triggers |
+| v2.3.1 | 2026-04-09 | handle_params assigns and test-helper guidance relaxed |
+| v2.3.0 | 2026-03-26 | Expanded domains — security, deployment, channels, telemetry, JSON API skills |
 | v2.2.0 | 2026-03-20 | Smart enforcement — project detection, context-aware hooks, PostToolUse validation, auto-fix suggestions |
 | v2.1.0 | 2026-03-19 | Additional skills & polish — auth, changesets, PubSub, authorization, nested associations, migration safety |
 | v2.0.0 | 2026-03-16 | Automation — code duplication, complexity, unused functions, template duplication |
@@ -388,18 +452,11 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-## Future Versions (Planned)
-
-### v2.3.0 - Expanded Domains
-**Focus:** Security hooks, deployment gotchas, channels, telemetry, JSON API
-
-### v3.0.0 - Reactive Intelligence
-**Focus:** Error decoder, test failure analyzer, Credo integration
-
----
-
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.3.1...v2.4.0
+[2.3.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.3.0...v2.3.1
+[2.3.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v1.4.0...v2.0.0

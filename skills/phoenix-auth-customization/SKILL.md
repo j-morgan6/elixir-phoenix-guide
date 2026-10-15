@@ -1,55 +1,45 @@
 ---
 name: phoenix-auth-customization
-description: Use when extending phx.gen.auth — adding registration fields, custom user attributes, extra migrations alongside generated auth, fixture updates.
-file_patterns:
-  - "**/accounts.ex"
-  - "**/accounts/*.ex"
-  - "**/user.ex"
-  - "**/user_registration_live.ex"
-  - "**/user_live/registration.ex"
-auto_suggest: true
+description: "Use when adding fields to the phx.gen.auth user — usernames, profile fields, a registration changeset, migrations and fixtures alongside generated auth. Not for on_mount/live_session (phoenix-liveview-auth) or permissions (phoenix-authorization-patterns)."
 ---
 
 # Phoenix Auth Customization
 
+> Verified against Elixir 1.20, Phoenix 1.8, LiveView 1.2, Ecto 3.14 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Never modify generated auth migrations** — create separate migrations for custom fields; generated migrations are tested and correct
-2. **Update `registration_changeset` to cast and validate new fields** — don't create a separate changeset for initial registration
-3. **Update test fixtures when adding required fields** — missing fixture fields cause cryptic test failures across the entire test suite
-4. **Confirm users in test fixtures for password-based auth** — set `confirmed_at: DateTime.utc_now(:second)` or tests requiring authenticated users will fail
-5. **Update both the registration form AND the `save/2` handler** — the form must send the field, and the handler must pass it to the context
-6. **Use `unique_constraint` + database unique index for uniqueness** — never validate uniqueness in application code alone
+1. **Use the generated auth; extend it, don't rewrite it** — keep `UserAuth`, `UserToken`, the session controller and the generated tests. Add fields and functions next to them; never paste a pre-1.8 `User` module or `UserAuth` over the generated one.
+2. **Never edit the generated auth migration** — add a new migration for each new column.
+3. **Add a `registration_changeset/3` that pipes `email_changeset/3`** — 1.8 has no registration changeset: `register_user/1` uses `email_changeset/3`, which the settings page also uses to change email. Requiring a new field inside `email_changeset` breaks email changes.
+4. **Registration is email-only (magic link)** — don't add a password input to registration. A password set at sign-up is silently dropped by `email_changeset`, and if you make it stick, `login_user_by_magic_link/1` raises for unconfirmed users with a password (see "Mixing magic link and password registration" in `mix help phx.gen.auth`).
+5. **Add only the new line to the schema** — keep `field :authenticated_at, :utc_datetime, virtual: true` (sudo mode reads it) and `timestamps(type: :utc_datetime)`.
+6. **Use the generated fixtures; add the new field to `valid_user_attributes/1`** — `user_fixture/1` already confirms the user via a magic link; `unconfirmed_user_fixture/1`, `user_scope_fixture/0,1` and `set_password/1` already exist.
+7. **Never `cast` privileged fields** — `:role`, `:confirmed_at`, `:org_id`, `:hashed_password` are set with `change/2` / `put_change/3` in a dedicated context function, never from form params.
+8. **Uniqueness = unique index + `unique_constraint`** — plus `unsafe_validate_unique` for early feedback, skipped during `phx-change` via the generator's `validate_unique: false` option.
+9. **Update every caller of the changed changeset** — the registration LiveView's `mount` and `"validate"` handler, `register_user/1`, and the generated `accounts_test.exs` tests that call `register_user(%{email: ...})` directly.
 
 ---
 
-## Running phx.gen.auth
-
-Start with the generator, then extend. Never hand-roll auth.
+## What phx.gen.auth Generates (1.8)
 
 ```bash
-# Generate auth with LiveView (recommended)
-mix phx.gen.auth Accounts User users
-
-# This creates:
-# - Migration: priv/repo/migrations/*_create_users_auth_tables.exs
-# - Schema: lib/my_app/accounts/user.ex
-# - Scope: lib/my_app/accounts/scope.ex
-# - Context: lib/my_app/accounts.ex
-# - LiveViews: lib/my_app_web/live/user_live/registration.ex, login.ex,
-#              confirmation.ex, settings.ex
-# - Controller: lib/my_app_web/controllers/user_session_controller.ex
-# - Plugs: lib/my_app_web/user_auth.ex
-# - Tests: test/my_app/accounts_test.exs, test/my_app_web/live/user_live/*_test.exs
+mix phx.gen.auth Accounts User users --live      # or --no-live for controllers
 ```
 
-Phoenix 1.8's `phx.gen.auth` defaults to **magic-link (passwordless) auth** — registration has no password field unless you pass options — and generates a `MyApp.Accounts.Scope` module consumed as `@current_scope`.
+- `lib/my_app/accounts.ex`, `accounts/user.ex`, `accounts/user_token.ex`, `accounts/user_notifier.ex`, `accounts/scope.ex`
+- `lib/my_app_web/user_auth.ex`, `controllers/user_session_controller.ex`
+- `--live`: `live/user_live/registration.ex`, `login.ex`, `confirmation.ex`, `settings.ex`; `--no-live`: registration, session and settings controllers + templates
+- `test/support/fixtures/accounts_fixtures.ex` and tests for all of the above
+- a `config :my_app, :scopes` entry so later `phx.gen.live`/`phx.gen.context` runs generate scoped code
+
+Users register with an email only, receive a magic link, and may set a password later in settings.
 
 ---
 
-## Adding Custom Fields
+## Adding a Field (username)
 
-### Step 1: Create a Separate Migration
+### 1. Migration
 
 ```bash
 mix ecto.gen.migration add_username_to_users
@@ -61,7 +51,8 @@ defmodule MyApp.Repo.Migrations.AddUsernameToUsers do
 
   def change do
     alter table(:users) do
-      add :username, :string, null: false
+      # citext (enabled by the auth migration) makes uniqueness case-insensitive, like email
+      add :username, :citext, null: false
     end
 
     create unique_index(:users, [:username])
@@ -69,205 +60,167 @@ defmodule MyApp.Repo.Migrations.AddUsernameToUsers do
 end
 ```
 
-### Step 2: Update the Schema
+On a table that already has rows, add the column nullable, backfill, then add `null: false` in a later migration.
+
+### 2. Schema — add one line
 
 ```elixir
-defmodule MyApp.Accounts.User do
-  schema "users" do
-    field :email, :string
-    field :username, :string  # Add new field
-    field :password, :string, virtual: true, redact: true
-    field :hashed_password, :string, redact: true
-    field :confirmed_at, :utc_datetime
+schema "users" do
+  # ...generated fields stay as they are
+  field :username, :string
+end
+```
 
-    timestamps()
-  end
+### 3. A registration changeset that builds on email_changeset
 
-  # Update registration_changeset to include username
-  def registration_changeset(user, attrs, opts \\ []) do
-    user
-    |> cast(attrs, [:email, :username, :password])
-    |> validate_required([:username])
-    |> validate_username()
-    |> validate_email(opts)
-    |> validate_password(opts)
-  end
+```elixir
+@doc """
+A user changeset for registration. Same options as `email_changeset/3`.
+"""
+def registration_changeset(user, attrs, opts \\ []) do
+  user
+  |> email_changeset(attrs, opts)
+  |> cast(attrs, [:username])
+  |> validate_username(opts)
+end
 
-  defp validate_username(changeset) do
+defp validate_username(changeset, opts) do
+  changeset =
     changeset
     |> validate_required([:username])
+    |> validate_length(:username, min: 3, max: 30)
     |> validate_format(:username, ~r/^[a-zA-Z0-9_]+$/,
       message: "only letters, numbers, and underscores"
     )
-    |> validate_length(:username, min: 3, max: 30)
+
+  if Keyword.get(opts, :validate_unique, true) do
+    changeset
     |> unsafe_validate_unique(:username, MyApp.Repo)
     |> unique_constraint(:username)
+  else
+    changeset
   end
 end
 ```
 
-### Step 3: Update the Registration LiveView
+### 4. Point the context at it
 
 ```elixir
-# In lib/my_app_web/live/user_live/registration.ex — update the form
-def render(assigns) do
-  ~H"""
-  <%!-- Phoenix 1.8 removed the old simple-form component; use <.form> --%>
-  <.form for={@form} id="registration_form" phx-submit="save" phx-change="validate">
-    <.input field={@form[:email]} type="email" label="Email" required />
-    <.input field={@form[:username]} type="text" label="Username" required />
-    <.input field={@form[:password]} type="password" label="Password" required />
-    <:actions>
-      <.button phx-disable-with="Creating account..." class="w-full">
-        Create an account
-      </.button>
-    </:actions>
-  </.form>
-  """
+# accounts.ex
+def register_user(attrs) do
+  %User{}
+  |> User.registration_changeset(attrs)
+  |> Repo.insert()
 end
 
-# Update the save handler to pass username
-def handle_event("save", %{"user" => user_params}, socket) do
-  case Accounts.register_user(user_params) do
-    {:ok, user} ->
-      # ... existing logic
-    {:error, %Ecto.Changeset{} = changeset} ->
-      {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+def change_user_registration(%User{} = user, attrs \\ %{}, opts \\ []) do
+  User.registration_changeset(user, attrs, opts)
+end
+```
+
+### 5. Registration LiveView
+
+Swap `change_user_email` for `change_user_registration` in `mount/3` and the `"validate"` handler, and add the input. The `"save"` handler already passes all `user_params` to `register_user/1`.
+
+```elixir
+def mount(_params, _session, socket) do
+  changeset = Accounts.change_user_registration(%User{}, %{}, validate_unique: false)
+  {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+end
+
+def handle_event("validate", %{"user" => user_params}, socket) do
+  changeset = Accounts.change_user_registration(%User{}, user_params, validate_unique: false)
+  {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+end
+```
+
+Keep the generated first `mount/3` clause that redirects already-logged-in users, and keep `@impl true` on the first clause.
+
+```heex
+<.form for={@form} id="registration_form" phx-submit="save" phx-change="validate">
+  <.input field={@form[:email]} type="email" label="Email" autocomplete="username" required />
+  <.input field={@form[:username]} type="text" label="Username" required />
+
+  <.button phx-disable-with="Creating account..." class="btn btn-primary w-full">
+    Create an account
+  </.button>
+</.form>
+```
+
+With `--no-live`, make the same change in `UserRegistrationController.new/2` and `registration_new.html.heex`.
+
+---
+
+## Fixtures and Generated Tests
+
+Only `valid_user_attributes/1` changes:
+
+```elixir
+def unique_user_username, do: "user#{System.unique_integer([:positive])}"
+
+def valid_user_attributes(attrs \\ %{}) do
+  Enum.into(attrs, %{
+    email: unique_user_email(),
+    username: unique_user_username()
+  })
+end
+```
+
+Everything else is already there: `user_fixture/1` (confirmed via magic link), `unconfirmed_user_fixture/1`, `user_scope_fixture/0,1`, `set_password/1` (for password-login tests), `register_and_log_in_user/1` in `ConnCase`. Do not add `password:` or `confirmed_at:` to the attributes.
+
+Then fix the generated tests that bypass fixtures — e.g. in `accounts_test.exs`, `register_user(%{email: email})` becomes `register_user(valid_user_attributes(email: email))`. Registration tests that submit `valid_user_attributes/1` keep working; ones that submit a literal `%{"email" => ...}` and expect success need a `"username"`.
+
+```elixir
+describe "register_user/1" do
+  test "requires username" do
+    {:error, changeset} = Accounts.register_user(%{email: unique_user_email()})
+    assert "can't be blank" in errors_on(changeset).username
+  end
+
+  test "enforces unique username case-insensitively" do
+    %{username: username} = user_fixture()
+
+    {:error, changeset} =
+      Accounts.register_user(valid_user_attributes(username: String.upcase(username)))
+
+    assert "has already been taken" in errors_on(changeset).username
+  end
+
+  test "changing email does not require username" do
+    user = user_fixture()
+    changeset = Accounts.change_user_email(user, %{email: unique_user_email()})
+    assert changeset.valid?
   end
 end
 ```
 
 ---
 
-## Updating Test Fixtures
+## Profile Fields and Privileged Fields
 
-This is the most commonly missed step. Every test that creates a user will break if fixtures don't include new required fields.
-
-```elixir
-defmodule MyApp.AccountsFixtures do
-  def unique_user_email, do: "user#{System.unique_integer()}@example.com"
-  def unique_user_username, do: "user#{System.unique_integer([:positive])}"
-
-  def valid_user_attributes(attrs \\ %{}) do
-    Enum.into(attrs, %{
-      email: unique_user_email(),
-      username: unique_user_username(),  # Add new required field
-      password: "hello world!"
-    })
-  end
-
-  def user_fixture(attrs \\ %{}) do
-    {:ok, user} =
-      attrs
-      |> valid_user_attributes()
-      |> MyApp.Accounts.register_user()
-
-    # Confirm user for password-based auth
-    {:ok, user} =
-      user
-      |> Ecto.Changeset.change(%{confirmed_at: DateTime.utc_now(:second)})
-      |> MyApp.Repo.update()
-
-    user
-  end
-end
-```
-
-### Why Confirmation Matters
-
-Without `confirmed_at`, the generated auth code treats the user as unconfirmed. Tests that log in users will silently fail or return unexpected redirects.
+User-editable fields that aren't part of sign-up get their own changeset and a scope-taking context function, like the generated settings functions:
 
 ```elixir
-# Bad — user is unconfirmed, login tests may fail
-def user_fixture(attrs \\ %{}) do
-  {:ok, user} =
-    attrs
-    |> valid_user_attributes()
-    |> MyApp.Accounts.register_user()
-
-  user  # Missing confirmation!
-end
-
-# Good — user is confirmed and ready for auth tests
-def user_fixture(attrs \\ %{}) do
-  {:ok, user} =
-    attrs
-    |> valid_user_attributes()
-    |> MyApp.Accounts.register_user()
-
-  {:ok, user} =
-    user
-    |> Ecto.Changeset.change(%{confirmed_at: DateTime.utc_now(:second)})
-    |> MyApp.Repo.update()
-
-  user
-end
-```
-
----
-
-## Adding Profile Fields Later
-
-For non-auth fields (bio, avatar, display name), create a separate `profile_changeset`:
-
-```elixir
-# In user.ex
+# user.ex
 def profile_changeset(user, attrs) do
   user
-  |> cast(attrs, [:bio, :display_name, :avatar_url])
-  |> validate_length(:bio, max: 500)
+  |> cast(attrs, [:display_name, :bio])
   |> validate_length(:display_name, max: 50)
+  |> validate_length(:bio, max: 500)
 end
 
-# In accounts.ex
-def update_user_profile(user, attrs) do
+# accounts.ex
+def update_user_profile(%Scope{user: user}, attrs) do
   user
   |> User.profile_changeset(attrs)
   |> Repo.update()
 end
 ```
 
----
-
-## Testing Auth Customization
-
-```elixir
-describe "register_user/1" do
-  test "requires username" do
-    {:error, changeset} = Accounts.register_user(%{
-      email: "test@example.com",
-      password: "validpassword123"
-    })
-
-    assert "can't be blank" in errors_on(changeset).username
-  end
-
-  test "validates username format" do
-    {:error, changeset} = Accounts.register_user(%{
-      email: "test@example.com",
-      username: "has spaces",
-      password: "validpassword123"
-    })
-
-    assert "only letters, numbers, and underscores" in errors_on(changeset).username
-  end
-
-  test "enforces unique username" do
-    %{username: username} = user_fixture()
-
-    {:error, changeset} = Accounts.register_user(%{
-      email: "other@example.com",
-      username: username,
-      password: "validpassword123"
-    })
-
-    assert "has already been taken" in errors_on(changeset).username
-  end
-end
-```
+Privileged fields (a `role`, an org membership) are never in a `cast` list. Add the column with a safe default (`field :role, Ecto.Enum, values: [:member, :admin], default: :member`), set it from an admin-only function with `Ecto.Changeset.change(user, role: :admin)`, and expose it to authorization through the scope — see the `phoenix-authorization-patterns` skill.
 
 ---
 
-See `ecto-changeset-patterns` skill for advanced changeset composition.
-See `phoenix-liveview-auth` skill for on_mount and auth redirect patterns.
-See `testing-essentials` skill for comprehensive testing patterns.
+See the `phoenix-liveview-auth` skill for on_mount hooks, sudo mode and routes.
+See the `ecto-changeset-patterns` skill for changeset composition.
+See the `testing-essentials` skill for general testing patterns.

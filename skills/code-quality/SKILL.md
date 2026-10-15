@@ -1,179 +1,156 @@
 ---
 name: code-quality
-description: Use when refactoring for duplication, complexity, or dead code — includes the plugin's on-demand analysis scripts.
-file_patterns:
-  - "**/*.ex"
-  - "**/*.heex"
-auto_suggest: true
+description: "Use when refactoring or reviewing Elixir code quality — compiler warnings and Credo first, then the plugin's on-demand duplication and branch-complexity scans. Not for style rules while writing code (use elixir-essentials)."
 ---
 
-# Code Quality Automation
+# Code Quality
 
-Automated detection of code quality issues in Elixir projects. These checks run automatically via hooks when files are written, and can be run on-demand for full project analysis.
+> Verified against Elixir 1.20, Phoenix 1.8, LiveView 1.2, Credo 1.7 — October 2026
+
+On-demand checks for duplication and complexity. Nothing here runs automatically: the plugin's hooks check security and deprecated-API patterns on the lines Claude writes, not duplication, complexity or templates.
 
 ## RULES — Follow these with no exceptions
 
-1. **Duplicated functions must be extracted** — when 2+ modules share >70% identical function implementations, create a shared module
-2. **Functions must stay below ABC complexity 30** — break complex functions into smaller helpers with single responsibilities
-3. **Unused private functions must be removed** — dead code increases maintenance burden and confusion
-4. **Duplicated templates must become components** — when 2+ HEEx files share >40% identical markup, extract to a function component
-5. **Run full analysis before major refactors** — use `run_analysis.sh` to establish a baseline before and after
-6. **Address duplication before complexity** — extracting shared code often reduces complexity as a side effect
-7. **Prefer composition over inheritance** — extract shared functions into modules imported/used where needed, not into base modules
+1. **Run `mix compile --warnings-as-errors` first** — the compiler reports unused private functions, variables, aliases and imports exactly; fix those before anything else
+2. **Then run `mix credo --strict`** when the project has Credo — its `.credo.exs` thresholds override the numbers in this skill
+3. **Extract duplicated function bodies** — when 2+ functions share a body that differs only in names or literals, keep one function and pass the differences as arguments
+4. **Keep branch complexity low** — split functions the analyzer flags (above 15) or Credo flags (`CyclomaticComplexity`, default max 9) into pattern-matched clauses or helpers
+5. **Take a baseline before a large refactor** — run the analyzer before and after, and compare
+6. **Address duplication before complexity** — extracting shared code often removes branches too
+7. **Share code through plain modules** — callers `alias` or `import` the shared module; don't build `__using__` base modules just to share functions
+8. **Repeated HEEx markup becomes a function component** — a manual guideline; no tool checks templates
 
 ---
 
-## What Gets Detected
+## Order of tools
 
-### Code Duplication
+1. `mix compile --warnings-as-errors` — unused code (the plugin no longer has its own unused-function check; the compiler is exact)
+2. `mix credo --strict` — the standard style and complexity checks. `Refactor.CyclomaticComplexity` is on by default (max 9); `Design.DuplicatedCode` and `Refactor.ABCSize` are opt-in in Credo's default config
+3. `mix xref callers MyApp.Mod.fun/2` and `mix xref graph` — who uses a function or module across the project
+4. The plugin's analyzer (below) — duplication with renamed variables and changed literals across the whole tree, and a branch-complexity count for projects without Credo
 
-Detects when the same function appears in multiple modules with >70% body similarity.
+## Running the analyzer
 
-**How it works:** AST-based analysis parses function bodies and compares them using trigram similarity. Functions with the same name, arity, and similar bodies are flagged.
+The scripts ship with the plugin. They need only `elixir` (no deps, no compilation) and exit 1 when they find something.
 
-**Example output:**
+```bash
+# Whole project
+elixir "${CLAUDE_SKILL_DIR}/../../scripts/code_quality.exs" scan lib/
+
+# Umbrella: scan all apps in one pass so duplication across apps is found
+elixir "${CLAUDE_SKILL_DIR}/../../scripts/code_quality.exs" scan apps/*/lib
+
+# One file: complexity of that file, duplication against its whole lib/ tree
+elixir "${CLAUDE_SKILL_DIR}/../../scripts/code_quality.exs" all lib/my_app_web/live/post_live/index.ex
+
+# One check only
+elixir "${CLAUDE_SKILL_DIR}/../../scripts/code_quality.exs" duplication lib/
+elixir "${CLAUDE_SKILL_DIR}/../../scripts/code_quality.exs" complexity lib/my_app/reports.ex
+
+# Wrapper: picks lib/ or apps/*/lib and reminds you of compile/credo first
+bash "${CLAUDE_SKILL_DIR}/../../scripts/run_analysis.sh" .
 ```
-  Duplication Detected
-   Function `format_time/1` (85% similar)
-     lib/app_web/live/cycle_time.ex:45
-     lib/app_web/live/lead_time.ex:52
-   Suggestion: Extract to a shared module
+
+---
+
+## Duplication
+
+Two function bodies count as duplicates when their ASTs are identical after variable names are replaced and string/number literals are erased. Function names, arity, module and directory don't matter. Atoms, calls and structure must match. Bodies under 25 AST nodes are ignored.
+
+**Example output** (from a fresh `mix phx.gen.auth` app):
+```
+Duplicated function bodies (identical after renaming variables and literals)
+
+   deliver_update_email_instructions/2  lib/demo/accounts/user_notifier.ex:24
+   deliver_magic_link_instructions/2  lib/demo/accounts/user_notifier.ex:51
+   deliver_confirmation_instructions/2  lib/demo/accounts/user_notifier.ex:68
+
+   Suggestion: extract one shared function (parameterize what differs).
 ```
 
-**How to fix:**
+Generated code like this is often fine to leave as it is. In your own code, extract the shared body:
+
 ```elixir
-# Create: lib/app_web/live/helpers.ex
-defmodule AppWeb.Live.Helpers do
-  def format_time(%Decimal{} = seconds) do
-    seconds |> Decimal.to_float() |> format_time()
+defmodule MyApp.Reports.Summary do
+  @moduledoc "Totals shared by the daily and weekly reports."
+
+  def summarize(rows, label, precision) do
+    {count, sum} = Enum.reduce(rows, {0, 0}, fn row, {c, s} -> {c + 1, s + row.amount} end)
+    average = if count > 0, do: sum / count, else: 0
+    %{total: sum, average: Float.round(average * 1.0, precision), label: label}
   end
-
-  def format_time(seconds) when is_number(seconds) do
-    # shared formatting logic
-  end
 end
 
-# In each LiveView:
-import AppWeb.Live.Helpers, only: [format_time: 1]
+# Callers:
+#   MyApp.Reports.Summary.summarize(rows, "daily", 2)
+#   MyApp.Reports.Summary.summarize(entries, "weekly", 3)
 ```
 
-### ABC Complexity
+**Limits:** only exact matches after normalization are found, so a copy with one added line is missed (Credo's opt-in `DuplicatedCode` check with a `mass_threshold` catches near-copies). Each clause of a multi-clause function is compared on its own. Only `.ex` files are scanned.
 
-Measures function complexity using the ABC metric (Assignments, Branches, Conditions).
+## Branch complexity
 
-- **A (Assignments):** `=` operators
-- **B (Branches):** `case`, `cond`, `if`, `unless`, `with`, `->` clauses
-- **C (Conditions):** `&&`, `||`, `and`, `or`, `==`, `!=`, `>`, `<`, `>=`, `<=`, `when` guards
-
-**ABC = sqrt(A² + B² + C²)** — threshold is 30.
+Branch complexity is 1, plus 1 for each `if`/`unless`, each `->` clause (in `case`, `cond`, `receive`, `fn` and `with ... else`), each `with`, and each `&&`, `||`, `and`, `or`. It approximates cyclomatic complexity. The threshold is 15. Credo's `Refactor.CyclomaticComplexity` is the standard check, and the project's `.credo.exs` limit takes precedence.
 
 **Example output:**
 ```
-  High Complexity Detected
-   Function `calculate_trend_line/1` — ABC complexity 41 (threshold: 30)
-     lib/app_web/live/helpers.ex:45
-   Suggestion: Break into smaller functions with single responsibilities
+High branch complexity (threshold 15)
+   classify/3  lib/my_app/classifier.ex:2  branch complexity 16
+
+   Suggestion: split into smaller functions or pattern-matched clauses.
 ```
 
-**How to fix:**
+**How to fix:** move each decision into a function head.
+
 ```elixir
-# Before: one large function (complexity 41)
-def calculate_trend_line(data) do
-  # 50 lines of assignments, branches, conditions
+defmodule MyApp.Classifier do
+  @moduledoc "Classifies pairs of numbers."
+
+  def classify(a, b, _c) when a > 10 and b > 10, do: :both_big
+  def classify(a, b, _c) when a > 10 or b > 10, do: :one_big
+  def classify(a, a, :x), do: :same
+  def classify(a, _b, c) when c == :y or a < 0, do: :odd
+  def classify(a, b, _c), do: compare(a, b)
+
+  defp compare(0, 0), do: :zero
+  defp compare(0, _), do: :left_zero
+  defp compare(_, 0), do: :right_zero
+  defp compare(a, b) when a > b, do: :left
+  defp compare(a, b) when a < b, do: :right
+  defp compare(_, _), do: :tie
 end
-
-# After: composed smaller functions (complexity <20 each)
-def calculate_trend_line(data) do
-  sums = calculate_regression_sums(data)
-  slope = calculate_slope(sums)
-  intercept = calculate_intercept(sums, slope)
-  build_trend_points(data, slope, intercept)
-end
 ```
 
-### Unused Private Functions
+## Repeated markup (manual)
 
-Detects `defp` functions that are defined but never called within the module.
+No tool compares templates. When you notice the same block of markup in two or more templates, move it into a function component with declared attributes and slots:
 
-**Example output:**
-```
-  Unused Private Functions
-   `old_format_date` defined at line 123 but never called
-   Suggestion: Remove if no longer needed
-```
-
-**Common after refactoring** — when you extract code to a shared module, the original private functions may become dead code.
-
-### Template Duplication
-
-Detects when HEEx templates in the same directory share >40% identical markup.
-
-**Example output:**
-```
-Template Duplication Detected
-   86 identical lines (72%) between:
-     cycle_time.html.heex
-     lead_time.html.heex
-   Suggestion: Extract shared markup to a function component
-```
-
-**How to fix:**
 ```elixir
-# Create a function component for the shared markup
-defmodule AppWeb.Live.Components do
+defmodule MyAppWeb.MetricComponents do
   use Phoenix.Component
 
-  def metric_filters(assigns) do
+  attr :title, :string, required: true
+  attr :range, :string, default: "7d"
+  slot :inner_block, required: true
+
+  def metric_panel(assigns) do
     ~H"""
-    <div class="filters">
-      <!-- shared filter markup -->
-    </div>
+    <section class="metric-panel">
+      <h2>{@title} <span class="text-sm">({@range})</span></h2>
+      {render_slot(@inner_block)}
+    </section>
     """
   end
 end
 ```
 
----
-
-## Running Analysis
-
-### Automatic (via hooks)
-
-Code quality checks run automatically when files are written or edited:
-- `.ex`/`.exs` files trigger duplication, complexity, and unused function checks
-- `.heex` files trigger template duplication checks
-
-### On-Demand (full project)
-
-Run a complete analysis from a checkout of this repo:
-
-```bash
-bash scripts/run_analysis.sh
-```
-
-Or target specific checks:
-
-```bash
-# Single file analysis
-elixir scripts/code_quality.exs all lib/app_web/live/my_live.ex
-
-# Specific check
-elixir scripts/code_quality.exs complexity lib/app_web/live/my_live.ex
-elixir scripts/code_quality.exs duplication lib/app_web/live/my_live.ex
-elixir scripts/code_quality.exs unused lib/app_web/live/my_live.ex
-
-# Scan entire lib/ directory
-elixir scripts/code_quality.exs scan lib/
-```
-
-When installed as a plugin, the scripts live inside the plugin install directory rather than
-at a fixed path in the project — run the commands above from a checkout of this repo instead.
+Use it in each template as `<.metric_panel title="Cycle time" range={@range}>...</.metric_panel>`.
 
 ---
 
 ## Testing
 
-For testing guidance, see `testing-essentials`. When writing tests for refactored shared modules, ensure:
-- Original test coverage is maintained
-- New shared module has its own test file
-- All callers still pass their tests after extraction
+For testing guidance, see the `testing-essentials` skill. When you extract shared code:
+- Keep the existing tests for every caller passing
+- Give the new shared module its own test file
+- Run `mix test` and `mix compile --warnings-as-errors` again afterwards: functions that are now unused show up as compiler warnings

@@ -1,435 +1,361 @@
 ---
 name: otp-essentials
-description: Use when writing GenServer, Supervisor, Task, Agent, or Registry code — init/handle_continue, call vs cast, supervision strategies, process naming.
-file_patterns:
-  - "**/application.ex"
-  - "**/*_server.ex"
-  - "**/*_supervisor.ex"
-  - "**/workers/**/*.ex"
-auto_suggest: true
+description: "Use when writing GenServer, Supervisor, Task, Agent, Registry or ETS code — call vs cast, supervision and restart strategies, process naming, timeouts, async work. Not for LiveView async (use phoenix-liveview-essentials)."
 ---
 
 # OTP Essentials
 
+> Verified against Elixir 1.20, Phoenix 1.8, LiveView 1.2 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Always use `@impl true`** before GenServer/Agent callbacks (init, handle_call, handle_cast, handle_info, terminate)
-2. **Keep `init/1` fast** — no blocking calls, no DB queries; use `handle_continue` for expensive setup
-3. **Use `GenServer.call` for request/response, `GenServer.cast` for fire-and-forget** — never cast when you need a result
-4. **Always define a public API wrapping GenServer calls** — callers should never use `GenServer.call(pid, ...)` directly
-5. **Use `Task.async`/`Task.await` with bounded timeouts** — never `Task.async` without a corresponding `Task.await` or `Task.yield`
-6. **Name processes via Registry, not atoms** — atom table is finite and never garbage collected
-7. **Supervisors own process lifecycle** — never start unsupervised long-running processes
+1. **Always use `@impl true`** before GenServer/Supervisor/Agent callbacks
+2. **Keep `init/1` fast** — return `{:ok, state, {:continue, term}}` and do DB/network setup in `handle_continue/2`; a slow `init` blocks the supervisor and app boot
+3. **Default to `GenServer.call`** — it gives back-pressure and a 5 s timeout. Use `cast` only for cheap state updates you can afford to lose; send slow side effects (email, HTTP) to `Task.Supervisor` or Oban
+4. **Wrap every process behind a public API module** — callers never write `GenServer.call(pid, ...)` themselves
+5. **One argument shape: `start_link(opts)` with a keyword list** — read it with `Keyword.fetch!/2`; child specs pass `{MyApp.Room, room_id: id}`
+6. **Registry for dynamic processes; atoms only for singletons** — never build a name with `String.to_atom/1`
+7. **Every long-running process is supervised** — no bare `spawn`/`Task.start`; inside a LiveView use `start_async/3` or `assign_async/3`
+8. **Every `Task.async` is awaited** — for collections use `Task.Supervisor.async_stream_nolink/4` with `on_timeout: :kill_task`
+9. **Don't rely on `terminate/2` for cleanup** — on supervisor shutdown it runs only if the process traps exits; use links or monitors for cleanup that must happen
 
 ---
 
 ## GenServer
 
-### Public API Pattern
-
-Always wrap GenServer calls behind a public module API. Callers should not know they're talking to a GenServer.
+### Public API
 
 ```elixir
-# Bad — leaks GenServer implementation to callers
-GenServer.call(MyApp.Cache, {:get, key})
-
-# Good — public API hides the GenServer
 defmodule MyApp.Cache do
   use GenServer
 
   # --- Public API ---
 
   def start_link(opts) do
-    name = Keyword.get(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
+    GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  def get(key, server \\ __MODULE__) do
-    GenServer.call(server, {:get, key})
-  end
+  def get(server \\ __MODULE__, key), do: GenServer.call(server, {:get, key})
 
-  def put(key, value, server \\ __MODULE__) do
-    GenServer.cast(server, {:put, key, value})
-  end
+  def put(server \\ __MODULE__, key, value), do: GenServer.call(server, {:put, key, value})
 
   # --- Callbacks ---
 
   @impl true
-  def init(_opts) do
-    {:ok, %{}}
-  end
+  def init(_opts), do: {:ok, %{}}
 
   @impl true
-  def handle_call({:get, key}, _from, state) do
-    {:reply, Map.get(state, key), state}
-  end
+  def handle_call({:get, key}, _from, state), do: {:reply, Map.get(state, key), state}
 
-  @impl true
-  def handle_cast({:put, key, value}, state) do
-    {:noreply, Map.put(state, key, value)}
-  end
+  def handle_call({:put, key, value}, _from, state), do: {:reply, :ok, Map.put(state, key, value)}
 end
 ```
 
-### Fast Init with handle_continue
+### Fast init with handle_continue
 
-Never block in `init/1`. Use `handle_continue` for expensive setup.
+<!-- epg:bad -->
+```elixir
+@impl true
+def init(_opts) do
+  items = MyApp.Repo.all(MyApp.Item)  # blocks the supervisor until the query returns
+  {:ok, %{items: items}}
+end
+```
 
 ```elixir
-# Bad — blocks the supervisor while loading data
 @impl true
-def init(opts) do
-  data = MyApp.Repo.all(MyApp.Item)  # Blocks!
-  {:ok, %{items: data}}
-end
-
-# Good — returns immediately, loads data asynchronously
-@impl true
-def init(opts) do
-  {:ok, %{items: []}, {:continue, :load_data}}
-end
+def init(_opts), do: {:ok, %{items: []}, {:continue, :load}}
 
 @impl true
-def handle_continue(:load_data, state) do
-  data = MyApp.Repo.all(MyApp.Item)
-  {:noreply, %{state | items: data}}
-end
+def handle_continue(:load, state), do: {:noreply, %{state | items: MyApp.Repo.all(MyApp.Item)}}
 ```
 
 ### call vs cast
 
+- `GenServer.call/3` waits 5 000 ms by default, then **exits the caller** (the server keeps working and its late reply is discarded). Pass a timeout only when you know the work is slower: `GenServer.call(server, msg, to_timeout(second: 30))`.
+- `cast` returns immediately, gives no back-pressure (a flooded mailbox grows without bound), and the message is lost if the server crashes. Fine for `increment`; wrong for "send this email".
+
+<!-- epg:bad -->
 ```elixir
-# call — synchronous, caller waits for reply (use for reads, queries)
-def get_count(server \\ __MODULE__) do
-  GenServer.call(server, :get_count)
-end
+# Fire-and-forget through a GenServer: the email is lost if EmailServer crashes
+def send_welcome(user), do: GenServer.cast(EmailServer, {:send, user})
+```
 
-@impl true
-def handle_call(:get_count, _from, state) do
-  {:reply, state.count, state}
-end
-
-# cast — asynchronous, fire-and-forget (use for writes, side effects)
-def increment(server \\ __MODULE__) do
-  GenServer.cast(server, :increment)
-end
-
-@impl true
-def handle_cast(:increment, state) do
-  {:noreply, %{state | count: state.count + 1}}
+```elixir
+# Work that may be lost: a supervised task. Work that must happen: an Oban job.
+def send_welcome(user) do
+  Task.Supervisor.start_child(MyApp.TaskSupervisor, fn -> MyApp.Mailer.deliver_welcome(user) end)
 end
 ```
 
-### handle_info for External Messages
+### Deferred replies with GenServer.reply/2
 
-Use `handle_info` for messages not sent via `call`/`cast` — timers, monitors, PubSub, etc.
+Return `{:noreply, state}` from `handle_call/3`, keep `from`, and reply later. The server stays responsive while slow work runs elsewhere:
 
 ```elixir
 @impl true
-def init(_opts) do
-  Process.send_after(self(), :tick, 1_000)
-  {:ok, %{count: 0}}
+def handle_call({:lookup, key}, from, state) do
+  task = Task.Supervisor.async_nolink(MyApp.TaskSupervisor, fn -> slow_lookup(key) end)
+  {:noreply, put_in(state.waiting[task.ref], from)}
 end
+
+@impl true
+def handle_info({ref, result}, state) when is_reference(ref) do
+  Process.demonitor(ref, [:flush])
+  {from, waiting} = Map.pop!(state.waiting, ref)
+  GenServer.reply(from, {:ok, result})
+  {:noreply, %{state | waiting: waiting}}
+end
+
+def handle_info({:DOWN, ref, :process, _pid, reason}, state) do
+  {from, waiting} = Map.pop!(state.waiting, ref)
+  GenServer.reply(from, {:error, reason})
+  {:noreply, %{state | waiting: waiting}}
+end
+```
+
+### handle_info and unexpected messages
+
+Timers, monitors, PubSub and task replies arrive in `handle_info/2`. Once you define `handle_info/2`, an unmatched message raises `FunctionClauseError`; add a final clause if stray messages are possible.
+
+```elixir
+require Logger
 
 @impl true
 def handle_info(:tick, state) do
   Process.send_after(self(), :tick, 1_000)
   {:noreply, %{state | count: state.count + 1}}
 end
+
+def handle_info(msg, state) do
+  Logger.warning("unexpected message: #{inspect(msg)}", server: __MODULE__)
+  {:noreply, state}
+end
 ```
 
-### Error Handling in Callbacks
+### Expected vs unexpected errors
 
-Handle *expected* errors gracefully — reply with `{:error, reason}` and keep the state. Let *unexpected* errors crash so the supervisor restarts the process.
+Reply with `{:error, reason}` for failures the caller can act on; let everything else crash so the supervisor restarts with clean state.
 
 ```elixir
-# Expected failure — reply with an error tuple, log it, keep serving
+require Logger
+
 @impl true
-def handle_call(:risky_operation, _from, state) do
-  case perform_operation() do
-    {:ok, result} ->
-      {:reply, {:ok, result}, update_state(state, result)}
+def handle_call({:charge, order_id}, _from, state) do
+  case Payments.charge(order_id) do
+    {:ok, receipt} ->
+      {:reply, {:ok, receipt}, state}
 
     {:error, reason} ->
-      Logger.error("Operation failed: #{inspect(reason)}")
+      Logger.error("charge failed: #{inspect(reason)}", order_id: order_id)
       {:reply, {:error, reason}, state}
   end
 end
-
-# Unexpected failure — let it crash
-@impl true
-def handle_cast(:dangerous_work, state) do
-  # If this raises, the supervisor restarts the process with clean state
-  result = dangerous_function!()
-  {:noreply, Map.put(state, :result, result)}
-end
 ```
+
+### terminate/2
+
+`terminate/2` runs when a callback returns `{:stop, ...}` or raises. On supervisor shutdown it runs **only if the process traps exits** (`Process.flag(:trap_exit, true)` in `init/1`) and its child spec `shutdown` isn't `:brutal_kill`. It never runs on `Process.exit(pid, :kill)` or a VM crash. Put cleanup that must happen in another process that monitors this one.
 
 ---
 
 ## Supervisors
 
-### Supervision Strategies
+### Strategies and restart values
+
+- `:one_for_one` (default choice): restart only the failed child.
+- `:rest_for_one`: restart the failed child and every child started after it (later children depend on earlier ones).
+- `:one_for_all`: restart all children (they share state).
+- A supervisor gives up after 3 restarts in 5 s (`max_restarts`/`max_seconds`) and exits, escalating to its parent.
+
+Child `restart:` values: `:permanent` (default for GenServer, always restarted), `:transient` (restarted only after an abnormal exit; use for processes that finish their job and stop with `:normal`), `:temporary` (never restarted; default for `Task.Supervisor.start_child/3`).
 
 ```elixir
-# one_for_one — restart only the failed child (most common)
+defmodule MyApp.Import do
+  use GenServer, restart: :transient
+  # stops with {:stop, :normal, state} when done; restarted only if it crashes
+end
+```
+
+### Application supervision tree
+
+Start order follows the generated Phoenix 1.8 `application.ex`; your processes go before the Endpoint:
+
+```elixir
 children = [
-  {MyApp.Cache, []},
-  {MyApp.Worker, []}
+  MyAppWeb.Telemetry,
+  MyApp.Repo,
+  {DNSCluster, query: Application.get_env(:my_app, :dns_cluster_query) || :ignore},
+  {Phoenix.PubSub, name: MyApp.PubSub},
+  {Registry, keys: :unique, name: MyApp.Registry},
+  {Task.Supervisor, name: MyApp.TaskSupervisor},
+  {DynamicSupervisor, name: MyApp.RoomSupervisor, strategy: :one_for_one},
+  MyApp.Cache,
+  MyAppWeb.Endpoint
 ]
-Supervisor.start_link(children, strategy: :one_for_one)
-
-# one_for_all — restart ALL children when one fails
-# Use when children depend on each other's state
-Supervisor.start_link(children, strategy: :one_for_all)
-
-# rest_for_one — restart failed child and all children started AFTER it
-# Use when later children depend on earlier ones
-Supervisor.start_link(children, strategy: :rest_for_one)
 ```
 
-### Application Supervision Tree
+### Dynamic children with Registry names
 
 ```elixir
-defmodule MyApp.Application do
-  use Application
+defmodule MyApp.Room do
+  use GenServer, restart: :transient
+
+  def start_link(opts) do
+    room_id = Keyword.fetch!(opts, :room_id)
+    GenServer.start_link(__MODULE__, room_id, name: via(room_id))
+  end
+
+  def start(room_id) do
+    DynamicSupervisor.start_child(MyApp.RoomSupervisor, {__MODULE__, room_id: room_id})
+  end
+
+  def whereis(room_id) do
+    case Registry.lookup(MyApp.Registry, {:room, room_id}) do
+      [{pid, _value}] -> {:ok, pid}
+      [] -> {:error, :not_found}
+    end
+  end
+
+  defp via(room_id), do: {:via, Registry, {MyApp.Registry, {:room, room_id}}}
 
   @impl true
-  def start(_type, _args) do
-    children = [
-      MyApp.Repo,
-      {Phoenix.PubSub, name: MyApp.PubSub},
-      MyApp.Cache,
-      MyAppWeb.Endpoint
-    ]
-
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-    Supervisor.start_link(children, opts)
-  end
+  def init(room_id), do: {:ok, %{room_id: room_id, members: MapSet.new()}}
 end
 ```
 
-### DynamicSupervisor for Runtime Children
+`DynamicSupervisor.start_child/2` returns `{:error, {:already_started, pid}}` when the name is taken; treat that as success if you only need the pid.
 
-Use when you need to start processes on demand, not at boot.
+### PartitionSupervisor for a bottleneck supervisor
+
+One `DynamicSupervisor` (or one GenServer) serialises every `start_child`. `PartitionSupervisor` (1.14+) runs one copy per scheduler and routes by key:
 
 ```elixir
-defmodule MyApp.RoomSupervisor do
-  use DynamicSupervisor
+# application.ex
+{PartitionSupervisor, child_spec: DynamicSupervisor, name: MyApp.RoomSupervisors}
 
-  def start_link(init_arg) do
-    DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
-  end
-
-  @impl true
-  def init(_init_arg) do
-    DynamicSupervisor.init(strategy: :one_for_one)
-  end
-
-  def start_room(room_id) do
-    spec = {MyApp.Room, room_id: room_id}
-    DynamicSupervisor.start_child(__MODULE__, spec)
-  end
-
-  def stop_room(pid) do
-    DynamicSupervisor.terminate_child(__MODULE__, pid)
-  end
-end
+# starting a room
+DynamicSupervisor.start_child(
+  {:via, PartitionSupervisor, {MyApp.RoomSupervisors, room_id}},
+  {MyApp.Room, room_id: room_id}
+)
 ```
 
 ---
 
 ## Tasks
 
-### async/await for Concurrent Work
-
 ```elixir
-# Parallel fetch with bounded timeout
-task1 = Task.async(fn -> fetch_user_profile(user_id) end)
-task2 = Task.async(fn -> fetch_user_posts(user_id) end)
+# Concurrent work you wait for, with an explicit timeout
+profile = Task.async(fn -> fetch_profile(user_id) end)
+posts = Task.async(fn -> fetch_posts(user_id) end)
+{Task.await(profile, 5_000), Task.await(posts, 5_000)}
 
-profile = Task.await(task1, 5_000)
-posts = Task.await(task2, 5_000)
-```
-
-### async_stream for Batch Processing
-
-```elixir
-# Process items concurrently with bounded concurrency
-user_ids
-|> Task.async_stream(&fetch_user/1, max_concurrency: 4, timeout: 10_000)
-|> Enum.map(fn {:ok, result} -> result end)
-```
-
-### Supervised Tasks (fire-and-forget)
-
-Start tasks under a `Task.Supervisor` for clean shutdown and observability.
-Note: `Task.Supervisor.start_child/2` defaults to `restart: :temporary` —
-crashed tasks are **not** restarted. Pass `restart: :transient` if you want
-restarts on abnormal exit.
-
-```elixir
-# Add to your supervision tree
-{Task.Supervisor, name: MyApp.TaskSupervisor}
-
-# Start a supervised task — not restarted by default (restart: :temporary)
-Task.Supervisor.start_child(MyApp.TaskSupervisor, fn ->
-  send_welcome_email(user)
-end)
-
-# Restart on crash — pass restart: :transient
-Task.Supervisor.start_child(
-  MyApp.TaskSupervisor,
-  fn -> send_welcome_email(user) end,
-  restart: :transient
+# A collection: bounded concurrency, slow items killed, crashes don't take the caller down
+MyApp.TaskSupervisor
+|> Task.Supervisor.async_stream_nolink(urls, &fetch/1,
+  max_concurrency: 8,
+  timeout: 10_000,
+  on_timeout: :kill_task
 )
+|> Enum.flat_map(fn
+  {:ok, result} -> [result]
+  {:exit, _reason} -> []
+end)
 ```
+
+- `Task.async/1` links the task to the caller: if the task crashes, so does the caller. Use `Task.Supervisor.async_nolink/2` when the caller must survive.
+- Plain `Task.async_stream/3` defaults to `on_timeout: :exit`, which crashes the caller on the first slow item.
+- In a LiveView, use `start_async/3` + `handle_async/3` (or `assign_async/3`), never `Task.async`: LiveView supervises the task, cancels it when the user leaves, and turns crashes into `{:exit, reason}`. See the `phoenix-liveview-essentials` skill.
 
 ---
 
 ## Agent
 
-Use Agent for simple state when GenServer is overkill. If you need `handle_info`, timeouts, or complex logic, use GenServer instead.
+Use an Agent only for trivial get/update state. Anything needing `handle_info`, timeouts or multi-step logic is a GenServer.
 
 ```elixir
 defmodule MyApp.Counter do
   use Agent
 
-  def start_link(initial_value) do
-    Agent.start_link(fn -> initial_value end, name: __MODULE__)
+  def start_link(opts) do
+    Agent.start_link(fn -> 0 end, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  def value do
-    Agent.get(__MODULE__, & &1)
-  end
+  def value(counter \\ __MODULE__), do: Agent.get(counter, & &1)
 
-  def increment do
-    Agent.update(__MODULE__, &(&1 + 1))
-  end
+  def increment(counter \\ __MODULE__), do: Agent.update(counter, &(&1 + 1))
 end
 ```
 
 ---
 
-## Process Naming
+## Process naming
 
-### Registry (preferred)
+- Singletons: `name: __MODULE__`.
+- One process per entity (room, user, game): a `{:via, Registry, {MyApp.Registry, key}}` name, as in `MyApp.Room` above.
+- Never `String.to_atom("room_#{id}")`: atoms are never garbage collected and the atom table has a fixed limit.
 
-```elixir
-# In application supervision tree
-{Registry, keys: :unique, name: MyApp.Registry}
+## Links vs monitors
 
-# In GenServer start_link
-def start_link(room_id) do
-  GenServer.start_link(__MODULE__, room_id,
-    name: {:via, Registry, {MyApp.Registry, {:room, room_id}}}
-  )
-end
+`Process.link/1` is bidirectional (crashes propagate; that's what supervisors use). `Process.monitor/1` is one-way: the watcher gets `{:DOWN, ref, :process, pid, reason}` in `handle_info/2` and keeps running. Use monitors to observe processes you don't own.
 
-# Lookup
-def get_room(room_id) do
-  case Registry.lookup(MyApp.Registry, {:room, room_id}) do
-    [{pid, _}] -> {:ok, pid}
-    [] -> {:error, :not_found}
-  end
-end
-```
+## ETS for read-heavy shared state
 
-### Atoms (only for singletons)
+The owner process creates the table and is the only writer; every other process reads directly. The default access is `:protected` (owner writes, all read), so don't pass `:public` unless other processes must write.
 
 ```elixir
-# OK — single global process
-GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-
-# Bad — dynamic atom creation from user input
-GenServer.start_link(__MODULE__, opts, name: String.to_atom("room_#{room_id}"))
-```
-
----
-
-## Process Linking vs Monitoring
-
-```elixir
-# Link — bidirectional, crash propagates (use in supervisors)
-Process.link(pid)
-
-# Monitor — unidirectional, receive :DOWN message (use for observation)
-ref = Process.monitor(pid)
-
-@impl true
-def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
-  # Handle monitored process dying
-  {:noreply, cleanup(state, pid)}
-end
-```
-
----
-
-## ETS for Shared Read-Heavy State
-
-When many processes need to read the same data and writes are infrequent:
-
-```elixir
-# Create table in a GenServer (owner process)
 @impl true
 def init(_opts) do
-  table = :ets.new(:my_cache, [:named_table, :set, :public, read_concurrency: true])
-  {:ok, %{table: table}}
+  :ets.new(:my_cache, [:named_table, :set, read_concurrency: true])
+  {:ok, %{}}
 end
 
-# Any process can read
-:ets.lookup(:my_cache, key)
+# Readers (any process): no GenServer round trip
+def lookup(key) do
+  case :ets.lookup(:my_cache, key) do
+    [{^key, value}] -> {:ok, value}
+    [] -> :error
+  end
+end
 
-# Only owner should write (or use :public carefully)
-:ets.insert(:my_cache, {key, value})
+# Writers go through the owner
+def put(key, value), do: GenServer.call(__MODULE__, {:put, key, value})
+
+@impl true
+def handle_call({:put, key, value}, _from, state) do
+  :ets.insert(:my_cache, {key, value})
+  {:reply, :ok, state}
+end
 ```
+
+The table dies with its owner. If the cache must survive restarts of the writer, make the owner a separate, minimal process.
 
 ---
 
-## Common Anti-Patterns
+## Anti-patterns
 
-```elixir
-# Bad — bottleneck GenServer (all requests go through one process)
-def get_user(id), do: GenServer.call(UserServer, {:get, id})
-# Fix: Use ETS, a database, or partition work across multiple processes
-
-# Bad — god process (one GenServer doing everything)
-# Fix: Split into focused processes, each with one responsibility
-
-# Bad — unmonitored Task.async
-Task.async(fn -> do_work() end)
-# no await or yield — caller loses track of work
-# Fix: Always await, or use Task.Supervisor.start_child for fire-and-forget
-
-# Bad — blocking the caller unnecessarily
-def send_email(user) do
-  GenServer.call(EmailServer, {:send, user})  # Waits for email to send
-end
-# Fix: Use cast if caller doesn't need the result
-def send_email(user) do
-  GenServer.cast(EmailServer, {:send, user})
-end
-```
+- **Bottleneck GenServer:** every read goes through one process. Use ETS, the database, or `PartitionSupervisor`.
+- **God process:** one GenServer owning unrelated state. Split by responsibility.
+- **Process as a code-organisation tool:** if there's no state, concurrency or failure isolation to manage, write a plain module.
+- **Unawaited `Task.async`:** the reply message leaks into the caller's mailbox. Await it, or use `Task.Supervisor.start_child/2`.
 
 ---
 
 ## Testing
 
+Start processes with `start_supervised!/1` (stopped after each test) and observe exits with a monitor, never with `Process.sleep`:
+
 ```elixir
-# Start GenServer in test
-test "get and put values" do
-  start_supervised!({MyApp.Cache, name: :test_cache})
+test "a room stops when the last member leaves" do
+  pid = start_supervised!({MyApp.Room, room_id: "lobby"})
+  ref = Process.monitor(pid)
 
-  assert MyApp.Cache.get(:key, :test_cache) == nil
-  MyApp.Cache.put(:key, "value", :test_cache)
-  assert MyApp.Cache.get(:key, :test_cache) == "value"
-end
+  :ok = MyApp.Room.join(pid, "alice")
+  :ok = MyApp.Room.leave(pid, "alice")
 
-# Test with Task
-test "concurrent fetch" do
-  task = Task.async(fn -> MyApp.fetch_data() end)
-  assert {:ok, data} = Task.await(task, 5_000)
+  assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
 end
 ```
 
-See `testing-essentials` skill for comprehensive testing patterns.
+Name test processes uniquely (or not at all) so `async: true` tests don't collide: `start_supervised!({MyApp.Cache, name: :"cache_#{System.unique_integer()}"})` is fine in tests because the atom count is bounded by the test count. See the `testing-essentials` skill.

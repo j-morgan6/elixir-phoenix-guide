@@ -1,324 +1,282 @@
 ---
 name: phoenix-authorization-patterns
-description: Use when deciding who may do what — ownership checks, policy modules, scoped queries, role-based access in LiveViews and controllers.
-file_patterns:
-  - "**/*_live.ex"
-  - "**/*_live/*.ex"
-  - "**/controllers/**/*.ex"
-auto_suggest: true
+description: "Use when deciding who may do what to which record — scoping context calls with %Scope{}, ownership checks, policy modules, roles, mass-assignment safety in LiveViews and controllers. Not for login/session plumbing (use phoenix-liveview-auth)."
 ---
 
 # Phoenix Authorization Patterns
 
+> Verified against Elixir 1.20, Phoenix 1.8, LiveView 1.2, Ecto 3.14 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Always authorize on the server in event handlers** — UI-only checks (hiding buttons) are not security; always verify in `handle_event/3`
-2. **Verify resource ownership by comparing `current_scope.user.id` against the resource's `user_id`** — never trust client-sent user IDs
-3. **Use policy modules for complex authorization** — don't inline permission checks in LiveViews or controllers
-4. **Add `data-confirm` attribute for destructive UI actions** — client-side confirmation before server round-trip
-5. **Test both authorized and unauthorized paths** — every `handle_event` that mutates data needs an authz test proving unauthorized access is rejected
-6. **Scope queries to the current user in contexts** — `where(user_id: ^user_id)` prevents IDOR vulnerabilities
+1. **Pass `current_scope` as the first argument to every context call** — `Blog.get_post!(socket.assigns.current_scope, id)`, never `Blog.get_post!(id)` or `Repo.get!(Post, id)` with an id from params. Loading by a client id without the scope is an IDOR.
+2. **Scope the query, not just the check** — `get_post!(%Scope{} = scope, id)` is `Repo.get_by!(Post, id: id, user_id: scope.user.id)`: another user's record raises `Ecto.NoResultsError` (a 404), so existence isn't leaked and no separate check can be forgotten.
+3. **Authorize inside the context function** — mutations re-check ownership or call the policy (`true = post.user_id == scope.user.id`, as the 1.8 generator does), so every caller (LiveView, controller, job) is covered.
+4. **Authorize in `handle_params/3` as well as `mount/3`** — `push_patch` re-runs `handle_params` but not `mount`; load any record whose id arrives in the URL through the scope where the params arrive.
+5. **Authorize every `handle_event/3` on the server** — hiding a button is UX, not security; events can be crafted with any params.
+6. **Never `cast` ownership or privileged fields** — `:user_id`, `:org_id`, `:role`, `:confirmed_at`, `:deleted_at`. Set them with `put_change/3` or `Ecto.build_assoc/3` from the scope, as the generator's `changeset(post, attrs, scope)` does.
+7. **Policies take `%Scope{}`, not `%User{}`** — the scope is what the web layer has, and it can carry org and role.
+8. **Put roles and orgs on the `Scope` struct** — extend the generated `Scope` (its moduledoc says to) and fill it once in an `on_mount` hook / plug, instead of threading extra arguments.
+9. **Scope PubSub topics too** — subscribe and broadcast on `"user:#{scope.user.id}:posts"` (the generator's `subscribe_posts(scope)`), never a global topic.
+10. **Test the unauthorized path** — another user's id must raise `Ecto.NoResultsError` (or return `{:error, :unauthorized}`); every mutating event needs a test proving that.
 
 ---
 
-## Server-Side Authorization in LiveViews
+## Scoped Contexts (the 1.8 generator pattern)
 
-UI checks prevent accidental clicks. Server checks prevent attacks. You need both.
+`mix phx.gen.live Blog Post posts title:string body:text` in an app with `phx.gen.auth` generates scoped contexts (the generated module, with its broadcasts, is in the `phoenix-pubsub-patterns` skill). Follow the shape for hand-written contexts. The two authorization points:
 
 ```elixir
-defmodule MyAppWeb.PostLive.Show do
+# Reads: the owner filter is part of the query
+def get_post!(%Scope{} = scope, id) do
+  Repo.get_by!(Post, id: id, user_id: scope.user.id)
+end
+
+# Writes: re-check ownership of the struct the caller passes in
+def update_post(%Scope{} = scope, %Post{} = post, attrs) do
+  true = post.user_id == scope.user.id
+
+  post
+  |> Post.changeset(attrs, scope)
+  |> Repo.update()
+end
+```
+
+The `true = ...` match crashes on a mismatch — correct when the caller should already have loaded the post through `get_post!/2`; a crash there means a bug, not a user error.
+
+### Mass assignment: ownership comes from the scope
+
+The generator's changeset never casts the owner; it sets it from the scope:
+
+```elixir
+post
+|> cast(attrs, [:title, :body])
+|> put_change(:user_id, user_scope.user.id)
+```
+
+For the bad/good pair and foreign keys the user chooses (`folder_id`), see the `ecto-changeset-patterns` skill.
+
+---
+
+## LiveViews
+
+```elixir
+defmodule MyAppWeb.PostLive.Index do
   use MyAppWeb, :live_view
 
-  @impl true
-  def mount(%{"id" => id}, _session, socket) do
-    post = Blog.get_post!(id)
-    {:ok, assign(socket, :post, post)}
-  end
+  alias MyApp.Blog
 
   @impl true
   def render(assigns) do
     ~H"""
-    <h1><%= @post.title %></h1>
-
-    <%!-- UI check — hide button if not owner --%>
-    <%= if @current_scope.user.id == @post.user_id do %>
-      <.button phx-click="delete" data-confirm="Are you sure?">
-        Delete
-      </.button>
-    <% end %>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div id="posts" phx-update="stream">
+        <div :for={{id, post} <- @streams.posts} id={id}>
+          {post.title}
+          <.link
+            phx-click={JS.push("delete", value: %{id: post.id}) |> hide("##{id}")}
+            data-confirm="Are you sure?"
+          >
+            Delete
+          </.link>
+        </div>
+      </div>
+    </Layouts.app>
     """
   end
 
-  # Server check — ALWAYS verify ownership
   @impl true
-  def handle_event("delete", _params, socket) do
-    post = socket.assigns.post
-
-    if socket.assigns.current_scope.user.id == post.user_id do
-      {:ok, _} = Blog.delete_post(post)
-      {:noreply, push_navigate(socket, to: ~p"/posts")}
-    else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
-    end
+  def mount(_params, _session, socket) do
+    {:ok, stream(socket, :posts, Blog.list_posts(socket.assigns.current_scope))}
   end
+
+  @impl true
+  def handle_event("delete", %{"id" => id}, socket) do
+    scope = socket.assigns.current_scope
+    post = Blog.get_post!(scope, id)
+    {:ok, _} = Blog.delete_post(scope, post)
+
+    {:noreply, stream_delete(socket, :posts, post)}
+  end
+end
+```
+
+The `id` comes from the client, but `get_post!/2` only finds the caller's own posts. `data-confirm` is a UX guard against misclicks, nothing more.
+
+### handle_params: patches skip mount
+
+<!-- epg:bad -->
+```elixir
+# Bad — mount checks, but a push_patch to /posts/OTHER_ID/edit only runs handle_params
+def handle_params(%{"id" => id}, _uri, socket) do
+  {:noreply, assign(socket, :post, Repo.get!(Post, id))}
+end
+```
+
+```elixir
+@impl true
+def handle_params(%{"id" => id}, _uri, socket) do
+  post = Blog.get_post!(socket.assigns.current_scope, id)
+  {:noreply, assign(socket, post: post, form: to_form(Blog.change_post(socket.assigns.current_scope, post)))}
+end
+
+def handle_params(_params, _uri, socket) do
+  {:noreply, assign(socket, post: nil, form: nil)}
 end
 ```
 
 ---
 
-## Owner-Only Pattern
+## Roles and Orgs on the Scope
 
-The simplest and most common authorization pattern. Extract it for reuse.
+Extend the generated struct; keep `for_user/1` (it still returns `nil` for guests).
 
 ```elixir
-defmodule MyAppWeb.PostLive.Edit do
-  use MyAppWeb, :live_view
+defmodule MyApp.Accounts.Scope do
+  alias MyApp.Accounts.User
+  alias MyApp.Orgs.Org
 
-  @impl true
-  def mount(%{"id" => id}, _session, socket) do
-    post = Blog.get_post!(id)
+  defstruct user: nil, org: nil, org_role: nil
 
-    if authorized?(socket, post) do
-      changeset = Blog.change_post(post)
-      {:ok, assign(socket, post: post, form: to_form(changeset))}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "Not authorized")
-       |> push_navigate(to: ~p"/posts")}
-    end
-  end
+  def for_user(%User{} = user), do: %__MODULE__{user: user}
+  def for_user(nil), do: nil
 
-  @impl true
-  def handle_event("save", %{"post" => params}, socket) do
-    post = socket.assigns.post
-
-    if authorized?(socket, post) do
-      case Blog.update_post(post, params) do
-        {:ok, post} ->
-          {:noreply, push_navigate(socket, to: ~p"/posts/#{post}")}
-        {:error, changeset} ->
-          {:noreply, assign(socket, :form, to_form(changeset))}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Not authorized")}
-    end
-  end
-
-  defp authorized?(socket, resource) do
-    socket.assigns.current_scope.user.id == resource.user_id
+  def put_org(%__MODULE__{} = scope, %Org{} = org, role) do
+    %{scope | org: org, org_role: role}
   end
 end
 ```
 
----
-
-## Scoped Queries in Contexts
-
-The strongest authorization pattern: queries only return data the user owns. No separate check needed.
+Fill it after authentication, from a membership lookup — never from a param or a cast field:
 
 ```elixir
-defmodule MyApp.Blog do
-  import Ecto.Query
+defmodule MyAppWeb.OrgHooks do
+  use MyAppWeb, :verified_routes
 
-  # Scoped — only returns posts owned by this user
-  def list_user_posts(%Scope{user: user}) do
-    Post
-    |> where(user_id: ^user.id)
-    |> order_by(desc: :inserted_at)
-    |> Repo.all()
-  end
+  alias MyApp.Accounts.Scope
+  alias MyApp.Orgs
 
-  # Scoped get — returns nil if not owned by user
-  def get_user_post(%Scope{user: user}, id) do
-    Post
-    |> where(user_id: ^user.id)
-    |> Repo.get(id)
-  end
+  def on_mount(:assign_org, %{"org_slug" => slug}, _session, socket) do
+    scope = socket.assigns.current_scope
 
-  # Scoped update — only updates if owned
-  def update_user_post(%Scope{user: user}, %Post{} = post, attrs) do
-    if post.user_id == user.id do
-      post
-      |> Post.changeset(attrs)
-      |> Repo.update()
-    else
-      {:error, :unauthorized}
-    end
-  end
+    # returns the caller's %Membership{org: org, role: role}, or nil
+    case Orgs.get_membership(scope, slug) do
+      %{org: org, role: role} ->
+        {:cont, Phoenix.Component.assign(socket, :current_scope, Scope.put_org(scope, org, role))}
 
-  # Scoped delete — only deletes if owned
-  def delete_user_post(%Scope{user: user}, %Post{} = post) do
-    if post.user_id == user.id do
-      Repo.delete(post)
-    else
-      {:error, :unauthorized}
+      nil ->
+        {:halt,
+         socket
+         |> Phoenix.LiveView.put_flash(:error, "Not found")
+         |> Phoenix.LiveView.redirect(to: ~p"/")}
     end
   end
 end
 ```
 
-### Using Scoped Contexts in LiveViews
-
 ```elixir
-@impl true
-def mount(_params, _session, socket) do
-  scope = socket.assigns.current_scope
-  posts = Blog.list_user_posts(scope)
-  {:ok, assign(socket, :posts, posts)}
-end
-
-@impl true
-def handle_event("delete", %{"id" => id}, socket) do
-  scope = socket.assigns.current_scope
-
-  # get_user_post/2 is scoped — it returns nil for posts that don't exist
-  # OR that exist but aren't owned by this user, so nil must be handled
-  # before calling delete_user_post/2
-  case Blog.get_user_post(scope, id) do
-    nil ->
-      {:noreply, put_flash(socket, :error, "Not found")}
-
-    post ->
-      case Blog.delete_user_post(scope, post) do
-        {:ok, _} -> {:noreply, update(socket, :posts, &Enum.reject(&1, fn p -> p.id == post.id end))}
-        {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      end
-  end
+live_session :org,
+  on_mount: [{MyAppWeb.UserAuth, :require_authenticated}, {MyAppWeb.OrgHooks, :assign_org}] do
+  live "/orgs/:org_slug/projects", ProjectLive.Index, :index
 end
 ```
+
+Put this `live_session` in a `scope` that pipes through `[:browser, :require_authenticated_user]`, and give controllers an equivalent plug. Org-owned queries then filter on `scope.org.id`. To make `phx.gen.live`/`phx.gen.context` generate org-scoped code, add an entry to `config :my_app, :scopes` (same keys as the generated `user` entry: `module`, `assign_key`, `access_path: [:org, :id]`, `schema_key: :org_id`, ...) and pass `--scope org`.
+
+A global role (site admin) belongs on the user as a non-cast field (see the `phoenix-auth-customization` skill) and is read as `scope.user.role`.
 
 ---
 
 ## Policy Modules
 
-For applications with complex permissions (roles, teams, org-level access), extract authorization into policy modules.
+When rules go beyond "owner only" (admins, org roles, published content), centralize them in a policy that takes the scope, and call it from the context.
 
 ```elixir
-defmodule MyApp.Policy do
-  alias MyApp.Accounts.User
+defmodule MyApp.Blog.Policy do
+  alias MyApp.Accounts.{Scope, User}
   alias MyApp.Blog.Post
 
-  def authorize(%User{role: :admin}, _action, _resource), do: :ok
+  # assumes a non-cast `role` field on User
+  def authorize(%Scope{user: %User{role: :admin}}, _action, %Post{}), do: :ok
 
-  def authorize(%User{id: user_id}, :edit, %Post{user_id: user_id}), do: :ok
-  def authorize(%User{id: user_id}, :delete, %Post{user_id: user_id}), do: :ok
-  def authorize(%User{}, :view, %Post{published: true}), do: :ok
+  def authorize(%Scope{user: %User{id: id}}, action, %Post{user_id: id})
+      when action in [:update, :delete],
+      do: :ok
 
-  def authorize(_user, _action, _resource), do: {:error, :unauthorized}
+  def authorize(%Scope{org: %{id: org_id}, org_role: :editor}, :update, %Post{org_id: org_id}),
+    do: :ok
+
+  def authorize(_scope, :view, %Post{published: true}), do: :ok
+  def authorize(_scope, _action, _resource), do: {:error, :unauthorized}
 end
+```
 
-# Usage in LiveView
-@impl true
-def handle_event("delete", %{"id" => id}, socket) do
-  user = socket.assigns.current_scope.user
-  post = Blog.get_post!(id)
-
-  case Policy.authorize(user, :delete, post) do
-    :ok ->
-      {:ok, _} = Blog.delete_post(post)
-      {:noreply, push_navigate(socket, to: ~p"/posts")}
-
-    {:error, :unauthorized} ->
-      {:noreply, put_flash(socket, :error, "Not authorized")}
+```elixir
+# In the context — replaces the owner-only `true = ...` check
+def delete_post(%Scope{} = scope, %Post{} = post) do
+  with :ok <- Policy.authorize(scope, :delete, post) do
+    Repo.delete(post)
   end
 end
 ```
 
+The catch-all also covers guests (`nil` scope). For an admin who may load any post, give the context an explicit query for that case (`get_post_for_admin!/2` that pattern-matches the admin scope) rather than unscoping `get_post!/2`.
+
 ---
 
-## Controller Authorization
+## Controllers
 
-Same principles apply in traditional controllers.
+Same rules; the plug assigns the same `current_scope`.
 
 ```elixir
-defmodule MyAppWeb.PostController do
-  use MyAppWeb, :controller
+def delete(conn, %{"id" => id}) do
+  scope = conn.assigns.current_scope
+  post = Blog.get_post!(scope, id)
+  {:ok, _post} = Blog.delete_post(scope, post)
 
-  def delete(conn, %{"id" => id}) do
-    user = conn.assigns.current_scope.user
-    post = Blog.get_post!(id)
-
-    if user.id == post.user_id do
-      {:ok, _} = Blog.delete_post(post)
-      redirect(conn, to: ~p"/posts")
-    else
-      conn
-      |> put_flash(:error, "Not authorized")
-      |> redirect(to: ~p"/posts")
-    end
-  end
+  conn
+  |> put_flash(:info, "Post deleted.")
+  |> redirect(to: ~p"/posts")
 end
 ```
 
----
-
-## data-confirm for Destructive Actions
-
-Always use `data-confirm` on buttons that delete or irreversibly modify data.
-
-```elixir
-# In HEEx template
-<.button phx-click="delete" phx-value-id={post.id} data-confirm="Are you sure?">
-  Delete
-</.button>
-
-# For links
-<.link href={~p"/posts/#{post}"} method="delete" data-confirm="Delete this post?">
-  Delete
-</.link>
-```
+`Ecto.NoResultsError` renders as a 404 (via `phoenix_ecto`), so a guessed id looks like a missing page.
 
 ---
 
 ## Testing Authorization
 
-Test that unauthorized users cannot perform actions, not just that authorized users can.
-
 ```elixir
 describe "authorization" do
-  test "owner can delete their post", %{conn: conn} do
-    user = user_fixture()
-    post = post_fixture(user_id: user.id)
-    conn = log_in_user(conn, user)
+  setup :register_and_log_in_user
 
-    {:ok, lv, _html} = live(conn, ~p"/posts/#{post}")
+  test "a user cannot load another user's post", %{conn: conn} do
+    other_post = post_fixture(user_scope_fixture())
 
-    lv |> element("button", "Delete") |> render_click()
-    assert_redirect(lv, ~p"/posts")
+    assert_raise Ecto.NoResultsError, fn -> live(conn, ~p"/posts/#{other_post}") end
   end
 
-  test "non-owner cannot delete post", %{conn: conn} do
-    owner = user_fixture()
-    other_user = user_fixture()
-    post = post_fixture(user_id: owner.id)
-    conn = log_in_user(conn, other_user)
+  test "context refuses another scope", %{scope: scope} do
+    other_scope = user_scope_fixture()
+    post = post_fixture(scope)
 
-    {:ok, lv, _html} = live(conn, ~p"/posts/#{post}")
-
-    # Delete button should not be visible
-    refute render(lv) =~ "Delete"
-
-    # Even if they craft the event, server rejects it
-    assert render_click(lv, "delete") =~ "Not authorized"
+    assert_raise Ecto.NoResultsError, fn -> Blog.get_post!(other_scope, post.id) end
+    assert_raise MatchError, fn -> Blog.delete_post(other_scope, post) end
   end
 
-  test "scoped query returns only user's posts" do
-    user1 = user_fixture()
-    user2 = user_fixture()
-    post1 = post_fixture(user_id: user1.id)
-    _post2 = post_fixture(user_id: user2.id)
+  test "list is scoped", %{scope: scope} do
+    post = post_fixture(scope)
+    _other = post_fixture(user_scope_fixture())
 
-    scope = %Scope{user: user1}
-    posts = Blog.list_user_posts(scope)
-
-    assert length(posts) == 1
-    assert hd(posts).id == post1.id
+    assert Blog.list_posts(scope) == [post]
   end
 end
 ```
 
+`register_and_log_in_user/1` puts `conn`, `user` and `scope` in the test context; `post_fixture/2` takes the scope first.
+
 ---
 
-See `phoenix-liveview-auth` skill for authentication (who you are).
-See `testing-essentials` skill for comprehensive testing patterns.
+See the `phoenix-liveview-auth` skill for authentication (`on_mount`, `live_session`, sudo mode).
+See the `phoenix-pubsub-patterns` skill for scoped topics.
+See the `ecto-changeset-patterns` skill for changeset composition.

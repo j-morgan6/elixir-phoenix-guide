@@ -1,31 +1,29 @@
 ---
 name: ecto-essentials
-description: Use when defining schemas, writing queries, or creating migrations — schema design, Repo usage, indexes, query composition.
-file_patterns:
-  - "**/schemas/**/*.ex"
-  - "**/migrations/**/*.exs"
-  - "**/repo.ex"
-  - "**/*_context.ex"
-auto_suggest: true
+description: "Use when defining schemas, writing queries, or creating migrations — scoped context functions, Repo.transact, upserts, indexes, query composition, safe field casting. Not for multi-changeset design (ecto-changeset-patterns) or nested children (ecto-nested-associations)."
 ---
 
 # Ecto Essentials
 
+> Verified against Elixir 1.20, Phoenix 1.8, Ecto 3.14 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Always use changesets** for inserts and updates — never pass raw maps to Repo
-2. **Preload associations** before accessing them — avoid N+1 queries
-3. **Use transactions** for multi-step operations that must succeed together
-4. **Add database constraints** (unique_index, foreign_key, check_constraint) AND changeset validations
-5. **Use contexts** for database access — never call Repo directly from web layer
-6. **Add indexes** on foreign keys and frequently queried fields
-7. **Use timestamps()** in every schema — track when records were created/updated
+1. **Scope every context function** — take `%Scope{}` first and filter by owner (`Repo.get_by!(Post, id: id, user_id: scope.user.id)`), as the Phoenix 1.8 generators do; never load, update or delete by a client-supplied id alone
+2. **Never `cast` foreign keys or privileged fields** (`:user_id`, `:folder_id`, `:role`, `:org_id`, `:confirmed_at`, `:deleted_at`) — set them with `put_change`/`Ecto.build_assoc` after a scope-checked lookup; use the 1.8 `changeset(struct, attrs, scope)` shape
+3. **Always use changesets** for inserts and updates — never pass raw maps to Repo
+4. **Use `Repo.transact/2` with `with`** for multi-step writes; `Repo.transaction/2` is soft-deprecated since Ecto 3.13. Reach for `Ecto.Multi` only when the steps are dynamic (see the `ecto-nested-associations` skill)
+5. **Preload associations** before accessing them — avoid N+1 queries
+6. **Add database constraints AND changeset constraint functions** — `unique_index` + `unique_constraint`, `references` + `foreign_key_constraint`
+7. **Index every foreign key** and every column you filter or sort on
+8. **Use `timestamps(type: :utc_datetime)`** in schemas and migrations — matches Phoenix 1.8's `timestamp_type: :utc_datetime`
+9. **Escape `%`, `_` and `\` in user search terms** before building a `like`/`ilike` pattern
+10. **Keep `change/0` migrations reversible** — `remove/3` with the type, `modify` with `from:`, `execute/2` with an up and a down
+11. **Database access goes through contexts** — never call `Repo` from controllers or LiveViews
 
 ---
 
-## Schema Definition
-
-Define schemas with proper types and associations.
+## Schema and Changeset (1.8 scope pattern)
 
 ```elixir
 defmodule MyApp.Media.Image do
@@ -34,271 +32,238 @@ defmodule MyApp.Media.Image do
 
   schema "images" do
     field :title, :string
-    field :description, :string
+    # Server-generated storage name (UUID + allowlisted extension)
     field :filename, :string
-    field :file_path, :string
+    # The client's file name, for display only
+    field :original_name, :string
+    # Detected from the file's bytes, not the client's claim
     field :content_type, :string
-    field :file_size, :integer
+    field :byte_size, :integer
 
     belongs_to :folder, MyApp.Media.Folder
+    belongs_to :user, MyApp.Accounts.User
 
-    timestamps()
+    timestamps(type: :utc_datetime)
+  end
+
+  @doc false
+  def changeset(image, attrs, scope) do
+    image
+    |> cast(attrs, [:title, :original_name])
+    # filename/content_type/byte_size are set on the struct by the upload code
+    # (see the phoenix-uploads skill); validate_required also checks struct data.
+    |> validate_required([:title, :filename, :content_type, :byte_size])
+    |> validate_length(:title, max: 255)
+    |> put_change(:user_id, scope.user.id)
   end
 end
 ```
 
-## Changesets
+This `Image` is the running example in the `phoenix-uploads`, `phoenix-liveview-essentials` (checklist) and `testing-essentials` (reference) skills too.
 
-Always use changesets for data validation and casting.
+**Mass assignment:** anything in the `cast` list can be set from a form or JSON body (bad/good pair in the `ecto-changeset-patterns` skill). Set ownership from the scope and foreign keys from a record you loaded through the scope:
 
 ```elixir
-def changeset(image, attrs) do
+def move_image(%Scope{} = scope, %Image{} = image, folder_id) do
+  true = image.user_id == scope.user.id
+  folder = get_folder!(scope, folder_id)
+
   image
-  |> cast(attrs, [:title, :description, :filename, :file_path, :content_type, :file_size, :folder_id])
-  |> validate_required([:title, :filename, :file_path, :content_type, :file_size])
-  |> validate_length(:title, min: 1, max: 255)
-  |> validate_inclusion(:content_type, ["image/jpeg", "image/png", "image/gif"])
-  |> validate_number(:file_size, greater_than: 0, less_than: 10_000_000)
-  |> foreign_key_constraint(:folder_id)
-end
-```
-
-## Query Composition
-
-Build queries composably using `Ecto.Query`.
-
-```elixir
-import Ecto.Query
-
-def list_images_by_folder(folder_id) do
-  Image
-  |> where([i], i.folder_id == ^folder_id)
-  |> order_by([i], desc: i.inserted_at)
-  |> Repo.all()
-end
-
-def search_images(query_string) do
-  search = "%#{query_string}%"
-
-  Image
-  |> where([i], ilike(i.title, ^search) or ilike(i.description, ^search))
-  |> Repo.all()
-end
-```
-
-## Preloading Associations
-
-Use `preload` to avoid N+1 queries.
-
-**Bad:**
-```elixir
-images = Repo.all(Image)
-# Later accessing image.folder causes N queries
-Enum.each(images, fn image -> image.folder.name end)
-```
-
-**Good:**
-```elixir
-images =
-  Image
-  |> preload(:folder)
-  |> Repo.all()
-
-Enum.each(images, fn image -> image.folder.name end)
-```
-
-## Transactions
-
-Use `Repo.transaction` for operations that must succeed together.
-
-```elixir
-def transfer_images(image_ids, from_folder_id, to_folder_id) do
-  Repo.transaction(fn ->
-    with {:ok, from_folder} <- get_folder(from_folder_id),
-         {:ok, to_folder} <- get_folder(to_folder_id),
-         {count, nil} <- update_images(image_ids, to_folder_id) do
-      # Repo.transaction wraps the return — don't return {:ok, _} from inside
-      count
-    else
-      {:error, reason} -> Repo.rollback(reason)
-      _ -> Repo.rollback(:unknown_error)
-    end
-  end)
-end
-
-# Repo.transaction/1 always wraps the fn's return in {:ok, _}.
-# Returning {:ok, count} from inside would yield {:ok, {:ok, count}} to the caller.
-# Callers see {:ok, count} or {:error, reason}:
-case transfer_images(ids, from_id, to_id) do
-  # count is the number of images transferred
-  {:ok, count} -> Logger.info("Images transferred", count: count)
-  # transaction rolled back
-  {:error, reason} -> Logger.error("Transfer failed", reason: inspect(reason))
-end
-```
-
-## Insert and Update
-
-Use `Repo.insert` and `Repo.update` with changesets.
-
-```elixir
-def create_image(attrs) do
-  %Image{}
-  |> Image.changeset(attrs)
-  |> Repo.insert()
-end
-
-def update_image(%Image{} = image, attrs) do
-  image
-  |> Image.changeset(attrs)
+  |> Ecto.Changeset.change(folder_id: folder.id)
+  |> Ecto.Changeset.foreign_key_constraint(:folder_id)
   |> Repo.update()
 end
 ```
 
-## Upsert Operations
+## Context Pattern (scoped)
 
-Use `on_conflict` for upsert behavior.
-
-```elixir
-def create_or_update_folder(attrs) do
-  %Folder{}
-  |> Folder.changeset(attrs)
-  |> Repo.insert(
-    on_conflict: {:replace, [:name, :updated_at]},
-    conflict_target: :name
-  )
-end
-```
-
-## Associations
-
-Define associations properly in schemas.
+Mirror `mix phx.gen.context` in 1.8: scope first, owner filter on every read, ownership assert on every write. (The generator also broadcasts `{:created | :updated | :deleted, image}` after each write; see the `phoenix-pubsub-patterns` skill.)
 
 ```elixir
-# Parent schema
-defmodule MyApp.Media.Folder do
-  use Ecto.Schema
+defmodule MyApp.Media do
+  import Ecto.Query, warn: false
 
-  schema "folders" do
-    field :name, :string
-    has_many :images, MyApp.Media.Image
+  alias MyApp.Accounts.Scope
+  alias MyApp.Media.{Folder, Image}
+  alias MyApp.Repo
 
-    timestamps()
+  # filters: [folder_id: id, search: term, min_size: bytes] (see Query Composition)
+  def list_images(%Scope{} = scope, filters \\ []) do
+    Image
+    |> where(user_id: ^scope.user.id)
+    |> filter_images(filters)
+    |> order_by(desc: :inserted_at, desc: :id)
+    |> Repo.all()
   end
-end
 
-# Child schema
-defmodule MyApp.Media.Image do
-  use Ecto.Schema
-
-  schema "images" do
-    field :title, :string
-    belongs_to :folder, MyApp.Media.Folder
-
-    timestamps()
+  def get_image!(%Scope{} = scope, id) do
+    Repo.get_by!(Image, id: id, user_id: scope.user.id)
   end
+
+  def get_folder!(%Scope{} = scope, id) do
+    Repo.get_by!(Folder, id: id, user_id: scope.user.id)
+  end
+
+  # tmp_path is the upload's temp file; store_file/1 checks its magic bytes,
+  # names it on the server and copies it. Storage fields never go through cast.
+  def create_image(%Scope{} = scope, tmp_path, attrs) do
+    with {:ok, stored} <- store_file(tmp_path) do
+      Image
+      |> struct!(stored)
+      |> Image.changeset(attrs, scope)
+      |> Repo.insert()
+    end
+  end
+
+  def update_image(%Scope{} = scope, %Image{} = image, attrs) do
+    true = image.user_id == scope.user.id
+
+    image
+    |> Image.changeset(attrs, scope)
+    |> Repo.update()
+  end
+
+  # For uploaded files, the phoenix-uploads version also removes the stored file.
+  def delete_image(%Scope{} = scope, %Image{} = image) do
+    true = image.user_id == scope.user.id
+    Repo.delete(image)
+  end
+
+  # Private helpers not shown: filter_images/2 (Query Composition below) and
+  # store_file/1 (the phoenix-uploads skill).
 end
 ```
 
-## Building Associations
-
-Use `Ecto.build_assoc` to create associated records.
-
+<!-- epg:bad -->
 ```elixir
-def add_image_to_folder(folder, image_attrs) do
-  folder
-  |> Ecto.build_assoc(:images)
-  |> Image.changeset(image_attrs)
-  |> Repo.insert()
-end
+# IDOR: any logged-in user can read or delete any image by guessing ids
+def get_image!(id), do: Repo.get!(Image, id)
 ```
 
-## Casting Associations
+LiveViews and controllers pass `socket.assigns.current_scope` / `conn.assigns.current_scope`.
 
-> `cast_assoc` usage, the FK-in-child-changeset pitfall, and nested-data patterns: see the
-> **ecto-changeset-patterns** and **ecto-nested-associations** skills.
-
-## Dynamic Queries
-
-Build queries dynamically based on filters.
+## Query Composition
 
 ```elixir
-def list_images(filters) do
+def search_images(%Scope{} = scope, term) do
+  pattern = "%" <> escape_like(term) <> "%"
+
   Image
-  |> apply_filters(filters)
+  |> where(user_id: ^scope.user.id)
+  |> where([i], ilike(i.title, ^pattern) or ilike(i.original_name, ^pattern))
+  |> order_by(desc: :inserted_at, desc: :id)
   |> Repo.all()
 end
 
-defp apply_filters(query, filters) do
+# `%` and `_` are LIKE wildcards; `\` is Postgres's default LIKE escape character.
+# Unescaped, a search for "_" matches every row.
+defp escape_like(term), do: String.replace(term, ["\\", "%", "_"], &("\\" <> &1))
+```
+
+Dynamic filters for `list_images(scope, filters)` above — reduce over an allowlist of keys; unknown keys fall through:
+
+```elixir
+defp filter_images(query, filters) do
   Enum.reduce(filters, query, fn
-    {:folder_id, folder_id}, query ->
-      where(query, [i], i.folder_id == ^folder_id)
-
-    {:search, term}, query ->
-      where(query, [i], ilike(i.title, ^"%#{term}%"))
-
-    {:min_size, size}, query ->
-      where(query, [i], i.file_size >= ^size)
-
-    _, query ->
-      query
+    {:folder_id, folder_id}, query -> where(query, [i], i.folder_id == ^folder_id)
+    {:search, term}, query -> where(query, [i], ilike(i.title, ^"%#{escape_like(term)}%"))
+    {:min_size, size}, query -> where(query, [i], i.byte_size >= ^size)
+    _, query -> query
   end)
 end
 ```
 
-## Aggregations
+To get one row from a query that may match several, use `query |> first() |> Repo.one()` (or `limit(1)`); `Repo.one/1` raises `Ecto.MultipleResultsError` on more than one row.
 
-Use aggregation functions for statistics.
+## Preloading Associations
+
+<!-- epg:bad -->
+```elixir
+images = Repo.all(Image)
+# image.folder is %Ecto.Association.NotLoaded{} — and loading it per row is N+1
+Enum.map(images, fn image -> image.folder.name end)
+```
 
 ```elixir
-def count_images_by_folder do
+images =
   Image
-  |> group_by([i], i.folder_id)
-  |> select([i], {i.folder_id, count(i.id)})
+  |> where(user_id: ^scope.user.id)
+  |> preload(:folder)
   |> Repo.all()
-  |> Map.new()
-end
+```
 
-def total_storage_used do
-  Image
-  |> select([i], sum(i.file_size))
-  |> Repo.one()
+When you also filter on the association, join and preload from the join in one query: `join(query, :inner, [i], f in assoc(i, :folder)) |> preload([_i, f], folder: f)`.
+
+## Transactions — `Repo.transact/2`
+
+The function must return `{:ok, value}` (commit) or `{:error, reason}` (rollback); `transact` returns that value unchanged, so a plain `with` is the whole pattern.
+
+```elixir
+def create_folder_with_images(%Scope{} = scope, attrs, image_ids) do
+  Repo.transact(fn ->
+    with {:ok, folder} <- create_folder(scope, attrs) do
+      {count, _} =
+        Image
+        |> where([i], i.id in ^image_ids and i.user_id == ^scope.user.id)
+        |> Repo.update_all(set: [folder_id: folder.id, updated_at: DateTime.utc_now(:second)])
+
+      {:ok, %{folder: folder, moved: count}}
+    end
+  end)
 end
 ```
 
-## Repo Functions
+- `{:error, changeset}` from `create_folder/2` falls out of `with` and rolls back — no `Repo.rollback/1` or catch-all `else` needed.
+- `update_all` skips changesets and autogenerated timestamps: set `updated_at` yourself, and keep the scope filter in the query.
+- Use `Ecto.Multi` when the number of steps depends on input (one step per cart item, etc.) — see the `ecto-nested-associations` skill.
 
-Common `Repo` operations:
+## Upserts
 
 ```elixir
-# Fetch single record
-Repo.get(Image, id)           # Returns record or nil
-Repo.get!(Image, id)          # Returns record or raises
-Repo.get_by(Image, title: "Photo")
+# Migration: create unique_index(:tags, [:user_id, :name])
+def upsert_tag(%Scope{} = scope, attrs) do
+  %Tag{}
+  |> Tag.changeset(attrs, scope)
+  |> Repo.insert(
+    on_conflict: {:replace_all_except, [:id, :inserted_at]},
+    conflict_target: [:user_id, :name],
+    returning: true
+  )
+end
+```
 
-# Fetch all records
-Repo.all(Image)
+- `conflict_target` must match a unique index exactly; its columns are never rewritten (`replace_changed: true` is the default).
+- `{:replace_all_except, ...}` overwrites every other column with the changeset's values, including fields the caller left unset. To touch only some columns use `{:replace, [:color, :updated_at]}` — never list the conflict-target columns there.
+- Without `returning: true` the returned struct holds the values you tried to insert (e.g. a fresh `inserted_at`), not the row in the database.
 
-# Insert
-Repo.insert(changeset)        # Returns {:ok, record} or {:error, changeset}
-Repo.insert!(changeset)       # Returns record or raises
+## Unique Constraints
 
-# Update
-Repo.update(changeset)
-Repo.update!(changeset)
+```elixir
+# Migration
+create unique_index(:folders, [:user_id, :name])
 
-# Delete
-Repo.delete(record)
-Repo.delete!(record)
+# Changeset — both: unsafe_validate_unique for live feedback, unique_constraint for the race
+|> unsafe_validate_unique([:name, :user_id], MyApp.Repo)
+|> unique_constraint(:name, name: :folders_user_id_name_index)
+```
 
-# Delete all matching
-Repo.delete_all(Image)
-Repo.delete_all(where(Image, [i], i.folder_id == ^folder_id))
+**Case-insensitive uniqueness** (emails, usernames): a plain `unique_index` and `unsafe_validate_unique` are case-sensitive, so `Bob@x.com` and `bob@x.com` both get in. Either use a `citext` column (what `phx.gen.auth` does), or a functional index plus downcasing in the changeset:
+
+```elixir
+# Option 1 — citext (comparisons, the unique index and unsafe_validate_unique all ignore case)
+execute "CREATE EXTENSION IF NOT EXISTS citext", ""
+alter table(:accounts) do
+  add :email, :citext, null: false
+end
+create unique_index(:accounts, [:email])
+
+# Option 2 — expression index; downcase in the changeset so unsafe_validate_unique agrees
+create unique_index(:accounts, ["(lower(email))"], name: :accounts_lower_email_index)
+# |> update_change(:email, &String.downcase/1)
+# |> unique_constraint(:email, name: :accounts_lower_email_index)
 ```
 
 ## Migrations
-
-Write clear, reversible migrations.
 
 ```elixir
 defmodule MyApp.Repo.Migrations.CreateImages do
@@ -307,105 +272,56 @@ defmodule MyApp.Repo.Migrations.CreateImages do
   def change do
     create table(:images) do
       add :title, :string, null: false
-      add :description, :text
       add :filename, :string, null: false
-      add :file_path, :string, null: false
+      add :original_name, :string
       add :content_type, :string, null: false
-      add :file_size, :integer, null: false
+      add :byte_size, :integer, null: false
+      add :user_id, references(:users, on_delete: :delete_all), null: false
       add :folder_id, references(:folders, on_delete: :nilify_all)
 
-      timestamps()
+      timestamps(type: :utc_datetime)
     end
 
+    create index(:images, [:user_id])
     create index(:images, [:folder_id])
-    create index(:images, [:inserted_at])
+    create unique_index(:images, [:filename])
+    create constraint(:images, :byte_size_must_be_positive, check: "byte_size > 0")
   end
 end
 ```
 
-## Unique Constraints
+**Irreversible commands in `change/0`** — they migrate fine and raise `Ecto.MigrationError` on rollback:
 
-Add unique constraints in schema and migration.
-
+<!-- epg:bad -->
 ```elixir
-# Migration
-create unique_index(:folders, [:name])
-
-# Schema changeset
-def changeset(folder, attrs) do
-  folder
-  |> cast(attrs, [:name])
-  |> validate_required([:name])
-  |> unique_constraint(:name)
-end
-```
-
-## Virtual Fields
-
-Use virtual fields for computed or temporary data.
-
-```elixir
-schema "images" do
-  field :title, :string
-  field :file_path, :string
-  field :url, :string, virtual: true
-
-  timestamps()
-end
-
-def with_url(%Image{} = image) do
-  %{image | url: "/uploads/#{Path.basename(image.file_path)}"}
-end
-```
-
-## Custom Types
-
-Define custom Ecto types for special data.
-
-```elixir
-defmodule MyApp.FileSize do
-  use Ecto.Type
-
-  def type, do: :integer
-
-  def cast(size) when is_integer(size) and size >= 0, do: {:ok, size}
-  def cast(_), do: :error
-
-  def load(size), do: {:ok, size}
-  def dump(size), do: {:ok, size}
-end
-```
-
-## Context Pattern
-
-Organize database operations in contexts.
-
-```elixir
-defmodule MyApp.Media do
-  alias MyApp.Media.{Image, Folder}
-  alias MyApp.Repo
-
-  def list_images, do: Repo.all(Image)
-
-  def get_image!(id), do: Repo.get!(Image, id)
-
-  def create_image(attrs) do
-    %Image{}
-    |> Image.changeset(attrs)
-    |> Repo.insert()
+def change do
+  alter table(:images) do
+    remove :legacy_path
+    modify :title, :text
   end
 
-  def update_image(%Image{} = image, attrs) do
-    image
-    |> Image.changeset(attrs)
-    |> Repo.update()
-  end
-
-  def delete_image(%Image{} = image) do
-    Repo.delete(image)
-  end
+  execute "CREATE EXTENSION IF NOT EXISTS pg_trgm"
 end
 ```
+
+```elixir
+def change do
+  alter table(:images) do
+    remove :legacy_path, :string
+    modify :title, :text, from: :string
+  end
+
+  execute "CREATE EXTENSION IF NOT EXISTS pg_trgm", "DROP EXTENSION IF EXISTS pg_trgm"
+end
+```
+
+For data backfills or anything without a natural inverse, write `up/0` and `down/0`.
+
+## Reference
+
+Field types (`:decimal`, `Ecto.Enum`, `{:array, t}`…), validator and constraint cheat sheets, query syntax (joins, aggregates, null ordering), migration operations and soft delete: see the [Ecto reference](reference.md).
+
+`cast_assoc`, nested forms, `Ecto.Multi` and `on_delete` design: see the `ecto-nested-associations` skill. Multiple changesets per schema and conditional validation: see the `ecto-changeset-patterns` skill.
 
 ## Testing
 

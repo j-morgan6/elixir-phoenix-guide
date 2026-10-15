@@ -20,8 +20,18 @@ echo ""
 # --- legacy cleanup ---
 LEGACY="$HOME/.claude/scripts/elixir-phoenix-guide"
 if [ -d "$LEGACY" ]; then
-  echo "Removing legacy script install at $LEGACY"
-  rm -rf "$LEGACY"
+  echo "Found a legacy (pre-2.4.0) script install at $LEGACY — it is no longer used."
+  response=n
+  if [ -r /dev/tty ]; then
+    printf "Delete it? [y/N] "
+    read -r response < /dev/tty || response=n
+  fi
+  if [ "$response" = "y" ] || [ "$response" = "Y" ]; then
+    rm -rf "$LEGACY"
+    echo "Removed."
+  else
+    echo "Left in place. Delete it yourself when ready: rm -rf \"$LEGACY\""
+  fi
   echo "NOTE: if you previously merged hooks-settings.json into ~/.claude/settings.json,"
   echo "remove those entries manually — they were inert and are superseded by plugin hooks."
 fi

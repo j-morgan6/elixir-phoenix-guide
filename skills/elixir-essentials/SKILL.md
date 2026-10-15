@@ -1,425 +1,170 @@
 ---
 name: elixir-essentials
-description: Use when writing or refactoring core Elixir — pattern matching, case/cond/with, pipes, {:ok, _}/{:error, _} contracts. Baseline style for any .ex/.exs change not covered by a more specific skill.
-file_patterns:
-  - "**/*.ex"
-  - "**/*.exs"
-auto_suggest: true
+description: "Use when writing or refactoring plain Elixir — pattern matching, with/case, {:ok, _}/{:error, _} contracts, modern Elixir 1.18+ features, Phoenix project layout. Not for OTP, Ecto, LiveView or tests (use the specific skill)."
 ---
 
 # Elixir Essentials
 
+> Verified against Elixir 1.20, Phoenix 1.8, Ecto 3.14 — October 2026
+
+Not for: OTP, Ecto, LiveView, tests — use the specific skill (`otp-essentials`, `ecto-essentials`, `phoenix-liveview-essentials`, `testing-essentials`).
+
+Phoenix project layout: see [project-structure.md](project-structure.md).
+
 ## RULES — Follow these with no exceptions
 
-1. **Use pattern matching over if/else** for control flow and data extraction
-2. **Add @impl true** before every callback function (mount, handle_event, handle_info, etc.)
-3. **Return {:ok, result} | {:error, reason} tuples** for fallible operations
-4. **Use `with` for 2+ sequential fallible operations** instead of nested case
-5. **Use the pipe operator** for 2+ chained transformations
-6. **Never nest if/else statements** — use case, cond, or multi-clause functions
-7. **Predicate functions end with `?`**, dangerous functions end with `!`
-8. **Let it crash** — don't write defensive code for impossible states
+1. **Branch with multi-clause functions, pattern matching and `case`** — never nest `if`; `unless` is soft-deprecated, write `if !cond`
+2. **A fallible function returns `{:ok, value} | {:error, reason}` on every path** — never a bare value from one clause and a tuple from another
+3. **Error reasons are atoms (or a changeset), not strings** — translate them to messages at the edge (controller, LiveView)
+4. **End a `with` on the last call itself, and no catch-all `else`** — `{:ok, x} <- f() do {:ok, x} end` is redundant (Credo `RedundantWithClauseResult`)
+5. **Multi-step writes go inside `Repo.transact/2`** — a `with` alone does not roll back the first write when a later step fails
+6. **Call `!` functions only when failure is a bug** — never wrap a bang call in `try/rescue`; call the non-bang version and `case` on it
+7. **A struct pattern matches `nil` fields** — `%User{name: name}` binds `nil`; add `when is_binary(name)` when you rely on the value
+8. **Treat compiler type warnings as bugs** — fix the code; don't add guards or `_ =` just to silence them
+9. **Logging: put values you'll filter on in Logger metadata; a human-readable message may interpolate** — every module that logs has `require Logger`
+10. **`@impl true` on every callback, clauses of one function grouped together** — split clauses fail `--warnings-as-errors`, and so does a callback without `@impl` once another callback has one
 
 ---
 
-## Pattern Matching
+## Return shapes
 
-Pattern matching is the primary control flow mechanism in Elixir. Prefer it over conditional statements.
-
-### Prefer Pattern Matching Over if/else
-
-**Bad:**
+<!-- epg:bad -->
 ```elixir
-def process(result) do
-  if result.status == :ok do
-    result.data
-  else
-    nil
-  end
-end
-```
-
-**Good:**
-```elixir
-def process(%{status: :ok, data: data}), do: data
-def process(_), do: nil
-```
-
-### Use Case for Multiple Patterns
-
-**Bad:**
-```elixir
-# Nested if inside else — hard to read and not how Elixir expresses multi-way branching
-def handle_response(response) do
-  if response.status == 200 do
-    {:ok, response.body}
-  else
-    if response.status == 404 do
-      {:error, :not_found}
-    else
-      {:error, :unknown}
-    end
-  end
-end
-```
-
-**Good:**
-```elixir
-def handle_response(%{status: 200, body: body}), do: {:ok, body}
-def handle_response(%{status: 404}), do: {:error, :not_found}
-def handle_response(_), do: {:error, :unknown}
-```
-
-## Pipe Operator
-
-Use the pipe operator `|>` to chain function calls for improved readability.
-
-### Basic Piping
-
-**Bad:**
-```elixir
-String.upcase(String.trim(user_input))
-```
-
-**Good:**
-```elixir
-user_input
-|> String.trim()
-|> String.upcase()
-```
-
-### Pipe into Function Heads
-
-**Bad:**
-```elixir
-def process_user(user) do
-  validated = validate_user(user)
-  transformed = transform_user(validated)
-  save_user(transformed)
-end
-```
-
-**Good:**
-```elixir
-def process_user(user) do
-  user
-  |> validate_user()
-  |> transform_user()
-  |> save_user()
-end
-```
-
-## With Statement
-
-Use `with` for sequential operations that can fail.
-
-**Bad:**
-```elixir
-def create_post(params) do
-  case validate_params(params) do
-    {:ok, valid_params} ->
-      case create_changeset(valid_params) do
-        {:ok, changeset} ->
-          Repo.insert(changeset)
-        error -> error
-      end
-    error -> error
-  end
-end
-```
-
-**Good:**
-```elixir
-def create_post(params) do
-  with {:ok, valid_params} <- validate_params(params),
-       {:ok, changeset} <- create_changeset(valid_params),
-       {:ok, post} <- Repo.insert(changeset) do
-    {:ok, post}
-  end
-end
-```
-
-### With Statement - Inline Error Handling
-
-Handle specific errors in the else block.
-
-```elixir
-def transfer_money(from_id, to_id, amount) do
-  with {:ok, from_account} <- get_account(from_id),
-       {:ok, to_account} <- get_account(to_id),
-       :ok <- validate_balance(from_account, amount),
-       {:ok, _} <- debit(from_account, amount),
-       {:ok, _} <- credit(to_account, amount) do
-    {:ok, :transfer_complete}
-  else
-    {:error, :insufficient_funds} ->
-      {:error, "Not enough money in account"}
-
-    {:error, :not_found} ->
-      {:error, "Account not found"}
-
-    error ->
-      {:error, "Transfer failed: #{inspect(error)}"}
-  end
-end
-```
-
-## Guards
-
-Use guards for simple type and value checks in function heads.
-
-```elixir
-def calculate(x) when is_integer(x) and x > 0 do
-  x * 2
-end
-
+# Mixed shapes: callers can't pattern match on the result
+def calculate(x) when is_integer(x) and x > 0, do: x * 2
 def calculate(_), do: {:error, :invalid_input}
 ```
 
-## List Comprehensions
-
-Use `for` comprehensions for complex transformations and filtering.
-
-**Bad (multiple passes):**
 ```elixir
-list
-|> Enum.map(&transform/1)
-|> Enum.filter(&valid?/1)
-|> Enum.map(&format/1)
-```
+def calculate(x) when is_integer(x) and x > 0, do: {:ok, x * 2}
+def calculate(_), do: {:error, :invalid_input}
 
-**Good (single pass):**
-```elixir
-for item <- list,
-    transformed = transform(item),
-    valid?(transformed) do
-  format(transformed)
-end
-```
-
-## Naming Conventions
-
-- Module names: `PascalCase`
-- Function names: `snake_case`
-- Variables: `snake_case`
-- Atoms: `:snake_case`
-- Predicate functions end with `?`: `valid?`, `empty?`
-- Dangerous functions end with `!`: `save!`, `update!`
-
-## Tagged Tuples for Error Handling
-
-The idiomatic way to handle success and failure in Elixir.
-
-```elixir
-def fetch_user(id) do
-  case Repo.get(User, id) do
+@doc """
+Fetches a post owned by the scope's user. Returns `{:ok, post}` or `{:error, :not_found}`.
+"""
+def fetch_post(%Scope{} = scope, id) do
+  case Repo.get_by(Post, id: id, user_id: scope.user.id) do
     nil -> {:error, :not_found}
-    user -> {:ok, user}
-  end
-end
-
-# Usage
-case fetch_user(123) do
-  {:ok, user} -> IO.puts("Found: #{user.name}")
-  {:error, :not_found} -> IO.puts("User not found")
-end
-```
-
-## Case Statements
-
-Pattern match on results.
-
-```elixir
-def process_upload(file) do
-  case save_file(file) do
-    {:ok, path} ->
-      Logger.info("File saved to #{path}")
-      create_record(path)
-
-    {:error, :invalid_format} ->
-      {:error, "File format not supported"}
-
-    {:error, reason} ->
-      Logger.error("Upload failed: #{inspect(reason)}")
-      {:error, "Upload failed"}
+    post -> {:ok, post}
   end
 end
 ```
 
-## Bang Functions
+If invalid input can only come from a bug, drop the fallback clause and let `FunctionClauseError` crash.
 
-Functions ending with `!` raise errors instead of returning tuples.
+## `with`
 
+<!-- epg:bad -->
 ```elixir
-# Returns {:ok, user} or {:error, changeset}
-def create_user(attrs) do
-  %User{}
-  |> User.changeset(attrs)
-  |> Repo.insert()
-end
-
-# Returns user or raises
-def create_user!(attrs) do
-  %User{}
-  |> User.changeset(attrs)
-  |> Repo.insert!()
-end
-
-# Usage
-try do
-  user = create_user!(invalid_attrs)
-  IO.puts("Created #{user.name}")
-rescue
-  e in Ecto.InvalidChangesetError ->
-    IO.puts("Failed: #{inspect(e)}")
+with {:ok, attrs} <- validate(params),
+     {:ok, post} <- Blog.create_post(scope, attrs) do
+  {:ok, post}
 end
 ```
 
-## Try/Rescue
+```elixir
+with {:ok, attrs} <- validate(params) do
+  Blog.create_post(scope, attrs)
+end
+```
 
-Catch exceptions when needed (use sparingly).
+Writes that must succeed or fail together run in one transaction, return atom reasons, and let every error fall through unchanged:
 
 ```elixir
-def parse_json(string) do
+def transfer(%Scope{} = scope, from_id, to_id, amount) do
+  Repo.transact(fn ->
+    with {:ok, from} <- fetch_own_account(scope, from_id),
+         {:ok, to} <- fetch_account(to_id),
+         :ok <- ensure_funds(from, amount),
+         {:ok, _from} <- debit(from, amount),
+         {:ok, _to} <- credit(to, amount) do
+      {:ok, :transferred}
+    end
+  end)
+end
+# => {:ok, :transferred} | {:error, :not_found | :insufficient_funds | Ecto.Changeset.t()}
+```
+
+A catch-all `else error -> {:error, "failed: #{inspect(error)}"}` hides new error shapes and turns them into strings nobody can match on. Add an `else` only to translate specific reasons, and list each one. (Row locking for the balance check: see the `ecto-essentials` skill.)
+
+## Bang functions and exceptions
+
+<!-- epg:bad -->
+```elixir
+def parse(body) do
   try do
-    {:ok, Jason.decode!(string)}
+    {:ok, Jason.decode!(body)}
   rescue
     Jason.DecodeError -> {:error, :invalid_json}
   end
 end
 ```
 
-> Processes, GenServers, supervision: see the **otp-essentials** skill.
-
-## Validation Errors
-
-Return clear, actionable error messages.
-
 ```elixir
-def validate_image_upload(file) do
-  with :ok <- validate_file_type(file),
-       :ok <- validate_file_size(file),
-       :ok <- validate_dimensions(file) do
-    {:ok, file}
-  else
-    {:error, :invalid_type} ->
-      {:error, "Only JPEG, PNG, and GIF files are allowed"}
-
-    {:error, :too_large} ->
-      {:error, "File must be less than 10MB"}
-
-    {:error, :invalid_dimensions} ->
-      {:error, "Image must be at least 100x100 pixels"}
+def parse(body) do
+  case JSON.decode(body) do
+    {:ok, %{"id" => id}} -> {:ok, id}
+    {:ok, _other} -> {:error, :missing_id}
+    {:error, _reason} -> {:error, :invalid_json}
   end
 end
 ```
 
-## Changeset Errors
+- `Repo.get_by!/2` / `get_post!/2` are right when a missing record should 404: phoenix_ecto maps `Ecto.NoResultsError` to a 404 page. Use the non-bang version plus `case` when absence is a normal outcome.
+- Reserve `try/rescue` for code you don't control that only raises (no tuple-returning variant exists).
 
-Extract and format Ecto changeset errors.
+## Pattern-matching traps
+
+- `%{}` matches **any** map, not an empty one; use `map_size(m) == 0`.
+- Params and decoded JSON have **string** keys: match `%{"id" => id}`. Never `String.to_atom/1` on input (atoms are never garbage collected); map strings to atoms explicitly or use `String.to_existing_atom/1`.
+- `map.key` raises `KeyError` when the key is missing; `map[:key]` returns `nil`. Structs don't implement `Access`, so use `struct.key`.
+- `==`, `<` and `>` on `DateTime`, `Date`, `Decimal` compare struct fields, not values. Use `DateTime.compare/2`, `Date.before?/2`, `Decimal.compare/2`.
 
 ```elixir
-def changeset_errors(changeset) do
-  Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-    Enum.reduce(opts, msg, fn {key, value}, acc ->
-      String.replace(acc, "%{#{key}}", to_string(value))
-    end)
-  end)
-end
-
-# Usage
-case create_user(attrs) do
-  {:ok, user} -> {:ok, user}
-  {:error, changeset} ->
-    errors = changeset_errors(changeset)
-    {:error, errors}
-end
+def display_name(%User{name: name}) when is_binary(name), do: name
+def display_name(%User{email: email}), do: email
 ```
 
-## Early Returns
+## Enum pipelines and `for`
 
-Use pattern matching in function heads for early returns.
+A 2–3 step `Enum` pipeline is idiomatic. A `for` comprehension is an alternative when you want a single pass, filters, or `into:`/`reduce:`:
 
 ```elixir
-def process_data(nil), do: {:error, :no_data}
-def process_data([]), do: {:error, :empty_list}
-def process_data(data) when is_list(data) do
-  # Process the list
-  {:ok, Enum.map(data, &transform/1)}
-end
+for item <- items, transformed = transform(item), valid?(transformed), do: format(transformed)
 ```
 
-## Avoid Defensive Programming
+## Logging
 
-Don't check for things that can't happen. Let it crash.
-
-**Bad (defensive):**
 ```elixir
-def get_username(user) do
-  if user && user.name do
-    user.name
-  else
-    "Unknown"
+defmodule MyApp.Uploads do
+  require Logger
+
+  def process_upload(%Scope{} = scope, file) do
+    case save_file(file) do
+      {:ok, path} ->
+        create_record(scope, path)
+
+      {:error, reason} = error ->
+        Logger.warning("upload failed: #{inspect(reason)}", user_id: scope.user.id)
+        error
+    end
   end
 end
 ```
 
-**Good (trust your types):**
-```elixir
-def get_username(%User{name: name}), do: name
-```
+`user_id` goes in metadata so log search can filter on it. Phoenix's `Plug.RequestId` already sets `request_id` metadata on every request. A custom key only shows up in the output once the formatter lists it: the generated `config :logger, :default_formatter, metadata: [:request_id]` needs `:user_id` added (see the `telemetry-essentials` skill).
 
-If the user is nil or doesn't have a name, it's a bug that should crash and be fixed.
+## Modern Elixir (1.18+)
 
-## Documentation
-
-Use `@doc` for public functions and `@moduledoc` for modules.
-
-```elixir
-defmodule MyModule do
-  @moduledoc """
-  This module handles user operations.
-  """
-
-  @doc """
-  Fetches a user by ID.
-
-  Returns `{:ok, user}` or `{:error, :not_found}`.
-  """
-  def fetch_user(id), do: # ...
-end
-```
-
-## Immutability
-
-All data structures are immutable. Functions return new values rather than modifying in place.
-
-```elixir
-# Always returns a new list
-list = [1, 2, 3]
-new_list = [0 | list]  # [0, 1, 2, 3]
-# list is still [1, 2, 3]
-```
-
-## Testing
-
-When writing test files for Elixir modules, invoke `elixir-phoenix-guide:testing-essentials` before writing any `_test.exs` file.
-
-## Anonymous Functions
-
-Use the capture operator `&` for concise anonymous functions.
-
-**Verbose:**
-```elixir
-Enum.map(list, fn x -> x * 2 end)
-```
-
-**Concise:**
-```elixir
-Enum.map(list, &(&1 * 2))
-```
-
-**Named function capture:**
-```elixir
-Enum.map(users, &User.format/1)
-```
+- **Type checker.** 1.18 type-checks patterns and calls; 1.20 infers types from whole function bodies and guards, narrows types across `case`/`cond`/`with` clauses, and warns on redundant clauses. A type warning is a proven bug or dead code: fix the code. Keep `mix compile --warnings-as-errors` in CI.
+- **`dbg/1`** prints each step of a pipeline with its result. Remove before committing (Credo's default `Warning.Dbg` check flags it).
+- **`then/2`** pipes into a non-first argument; **`tap/2`** runs a side effect and passes the value through:
+  ```elixir
+  params |> normalize_attrs() |> then(&Blog.create_post(scope, &1)) |> tap(&log_result/1)
+  ```
+- **`JSON` (stdlib, 1.18+)**: `JSON.decode/1` returns `{:ok, term} | {:error, reason}`, `JSON.encode!/1`. Phoenix 1.8 still generates Jason (`config :phoenix, :json_library, Jason`, also Phoenix's default). For structs rendered by `json/2` or channels, implement the configured library's protocol (`@derive {Jason.Encoder, only: [...]}`); `@derive JSON.Encoder` alone isn't used by Phoenix. Plain decoding can use either.
+- **`mix format --migrate`** rewrites deprecated forms (`unless` → `if !`, `'abc'` → `~c"abc"`, bitstring modifiers, and since 1.19 parens on piped calls). Run it in its own commit.
+- **Structs:** `@enforce_keys [:id]` before `defstruct` turns a missing key into a compile error. Write `@spec` on public functions for docs and Dialyzer; the 1.20 checker infers types without them.
+- **`defguard`** makes a reusable guard: `defguard is_amount(x) when is_integer(x) and x > 0`.
+- **`Process.set_label/1`** (1.17+) names a Task or spawned process in Observer and crash logs: `Process.set_label({:import, import_id})`.
+- **`to_timeout/1`** (1.17+): `to_timeout(minute: 5)` instead of `5 * 60 * 1000`.

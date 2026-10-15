@@ -1,441 +1,260 @@
 #!/usr/bin/env elixir
-# Code Quality Analyzer for Elixir Phoenix Guide
+# Code Quality Analyzer for the elixir-phoenix-guide plugin.
 #
-# Automated detection of code quality issues:
-#   - Code duplication across modules
-#   - ABC complexity analysis
-#   - Unused private function detection
+# On-demand, AST-based checks that complement (not replace) the compiler and
+# Credo:
+#   - duplication: function bodies that are identical once variable names and
+#     string/number literals are erased, across every function in the scanned
+#     tree, whatever their name, arity or directory
+#   - complexity: "branch complexity" = 1 + if/unless + each -> clause
+#     (case/cond/receive/fn/with-else) + with + &&/||/and/or. An approximation
+#     of cyclomatic complexity; Credo's Refactor.CyclomaticComplexity is the
+#     standard check and the project's .credo.exs thresholds win.
+#
+# Unused private functions are not checked here: `mix compile
+# --warnings-as-errors` reports unused defp exactly, and `mix xref` covers
+# cross-module usage.
 #
 # Usage:
-#   elixir code_quality.exs duplication <file>
-#   elixir code_quality.exs complexity <file>
-#   elixir code_quality.exs unused <file>
-#   elixir code_quality.exs all <file>
-#   elixir code_quality.exs scan <directory>
+#   elixir code_quality.exs scan <dir> [<dir> ...]   all checks over a tree
+#   elixir code_quality.exs all <file>               file vs. its lib/ tree
+#   elixir code_quality.exs duplication <file|dir>
+#   elixir code_quality.exs complexity <file|dir>
+# Exit status: 0 = nothing found, 1 = issues found.
 
 defmodule CodeQuality do
-  @similarity_threshold 0.7
-  @min_body_size 50
-  @complexity_threshold 30
+  # Normalized-AST node count a body needs before it is worth reporting.
+  @min_nodes 25
+  @complexity_threshold 15
 
-  # ── Duplication Detection ──────────────────────────────────────────────
+  # ── Function extraction ────────────────────────────────────────────────
 
-  def detect_duplication(file) do
+  def functions_in(file) do
     with {:ok, content} <- File.read(file),
-         {:ok, ast} <- Code.string_to_quoted(content, columns: true, file: file) do
-      target_funs = extract_functions(ast)
-
-      if Enum.empty?(target_funs) do
-        []
-      else
-        dir = Path.dirname(file)
-
-        find_ex_files(dir, file)
-        |> Enum.flat_map(fn sibling ->
-          with {:ok, sib_content} <- File.read(sibling),
-               {:ok, sib_ast} <- Code.string_to_quoted(sib_content, columns: true, file: sibling) do
-            sib_funs = extract_functions(sib_ast)
-            compare_functions(target_funs, sib_funs, file, sibling)
-          else
-            _ -> []
-          end
-        end)
-      end
+         {:ok, ast} <- Code.string_to_quoted(content, file: file) do
+      {_, funs} = Macro.prewalk(ast, [], &collect(&1, &2, file))
+      Enum.reverse(funs)
     else
       _ -> []
     end
   end
 
-  defp extract_functions(ast) do
-    {_, funs} =
-      Macro.prewalk(ast, [], fn
-        {:def, meta, [{:when, _, [{name, _, args} | _guards]} | rest]} = node, acc
-        when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          body_str = if body, do: Macro.to_string(body), else: ""
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, body_str} | acc]}
+  defp collect({kind, meta, [head | rest]} = node, acc, file) when kind in [:def, :defp] do
+    case fun_head(head) do
+      {name, args} ->
+        fun = %{
+          name: name,
+          arity: length(args || []),
+          file: file,
+          line: Keyword.get(meta, :line, 0),
+          body: body(rest)
+        }
 
-        {:defp, meta, [{:when, _, [{name, _, args} | _guards]} | rest]} = node, acc
-        when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          body_str = if body, do: Macro.to_string(body), else: ""
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, body_str} | acc]}
+        {node, [fun | acc]}
 
-        {:def, meta, [{name, _, args} | rest]} = node, acc when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          body_str = if body, do: Macro.to_string(body), else: ""
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, body_str} | acc]}
-
-        {:defp, meta, [{name, _, args} | rest]} = node, acc when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          body_str = if body, do: Macro.to_string(body), else: ""
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, body_str} | acc]}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    Enum.reverse(funs)
-  end
-
-  defp extract_body([[do: body] | _]), do: body
-  defp extract_body([body | _]) when is_tuple(body), do: body
-  defp extract_body(_), do: nil
-
-  defp compare_functions(funs1, funs2, file1, file2) do
-    for {name1, arity1, line1, body1} <- funs1,
-        {name2, arity2, line2, body2} <- funs2,
-        name1 == name2,
-        arity1 == arity2,
-        byte_size(body1) > @min_body_size,
-        byte_size(body2) > @min_body_size,
-        sim = similarity(body1, body2),
-        sim >= @similarity_threshold do
-      %{
-        name: name1,
-        arity: arity1,
-        file1: file1,
-        line1: line1,
-        file2: file2,
-        line2: line2,
-        similarity: sim
-      }
+      nil ->
+        {node, acc}
     end
   end
 
-  defp similarity(s1, s2) do
-    t1 = trigrams(s1)
-    t2 = trigrams(s2)
-    intersection = MapSet.intersection(t1, t2) |> MapSet.size()
-    union = MapSet.union(t1, t2) |> MapSet.size()
-    if union == 0, do: 0.0, else: intersection / union
+  defp collect(node, acc, _file), do: {node, acc}
+
+  defp fun_head({:when, _, [head | _guards]}), do: fun_head(head)
+  defp fun_head({name, _, args}) when is_atom(name) and (is_list(args) or is_nil(args)), do: {name, args}
+  defp fun_head(_), do: nil
+
+  defp body([[{:do, body} | _] | _]), do: body
+  defp body([kw | _]) when is_list(kw), do: Keyword.get(kw, :do)
+  defp body(_), do: nil
+
+  # ── Duplication ────────────────────────────────────────────────────────
+
+  # Variables become :_var, strings/numbers/charlists become placeholders,
+  # metadata is dropped. Atoms, calls and structure are kept.
+  def normalize(ast) do
+    Macro.prewalk(ast, fn
+      {name, _meta, ctx} when is_atom(name) and is_atom(ctx) -> {:_var, [], nil}
+      {form, _meta, args} -> {form, [], args}
+      bin when is_binary(bin) -> :_str
+      num when is_number(num) -> :_num
+      other -> other
+    end)
   end
 
-  defp trigrams(str) do
-    str
-    |> String.codepoints()
-    |> Enum.chunk_every(3, 1, :discard)
-    |> Enum.map(&Enum.join/1)
-    |> MapSet.new()
+  defp node_count(ast) do
+    {_, n} = Macro.prewalk(ast, 0, fn node, acc -> {node, acc + 1} end)
+    n
   end
 
-  defp find_ex_files(dir, exclude) do
-    Path.wildcard(Path.join(dir, "*.ex"))
-    |> Enum.reject(&(&1 == exclude))
+  # Groups of >= 2 functions with identical normalized bodies.
+  def duplicate_groups(funs) do
+    funs
+    |> Enum.reject(&is_nil(&1.body))
+    |> Enum.map(fn f -> {normalize(f.body), f} end)
+    |> Enum.filter(fn {norm, _} -> node_count(norm) >= @min_nodes end)
+    |> Enum.group_by(fn {norm, _} -> norm end, fn {_, f} -> f end)
+    |> Map.values()
+    |> Enum.filter(&match?([_, _ | _], &1))
+    |> Enum.map(fn group -> Enum.sort_by(group, &{&1.file, &1.line}) end)
+    |> Enum.sort_by(fn [f | _] -> {f.file, f.line} end)
   end
 
-  # ── ABC Complexity Analysis ────────────────────────────────────────────
+  # ── Branch complexity ──────────────────────────────────────────────────
 
-  def analyze_complexity(file) do
-    with {:ok, content} <- File.read(file),
-         {:ok, ast} <- Code.string_to_quoted(content, columns: true, file: file) do
-      extract_function_complexities(ast)
-      |> Enum.filter(fn {_, _, _, complexity} -> complexity > @complexity_threshold end)
-    else
-      _ -> []
+  @branch_forms [:if, :unless, :with, :->, :&&, :||, :and, :or]
+
+  def complexity(nil), do: 1
+
+  def complexity(ast) do
+    {_, n} =
+      Macro.prewalk(ast, 1, fn
+        {form, _, args} = node, acc when form in @branch_forms and is_list(args) -> {node, acc + 1}
+        node, acc -> {node, acc}
+      end)
+
+    n
+  end
+
+  def complex_functions(funs) do
+    funs
+    |> Enum.map(&Map.put(&1, :score, complexity(&1.body)))
+    |> Enum.filter(&(&1.score > @complexity_threshold))
+  end
+
+  # ── Files ──────────────────────────────────────────────────────────────
+
+  def ex_files(path) do
+    cond do
+      File.dir?(path) -> Path.wildcard(Path.join(path, "**/*.ex"))
+      File.regular?(path) -> [path]
+      true -> []
     end
+    |> Enum.reject(&String.contains?(&1, ["/deps/", "/_build/", "/node_modules/"]))
   end
 
-  defp extract_function_complexities(ast) do
-    {_, funs} =
-      Macro.prewalk(ast, [], fn
-        {:def, meta, [{:when, _, [{name, _, args} | _guards]} | rest]} = node, acc
-        when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          complexity = calculate_complexity(body)
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, complexity} | acc]}
-
-        {:defp, meta, [{:when, _, [{name, _, args} | _guards]} | rest]} = node, acc
-        when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          complexity = calculate_complexity(body)
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, complexity} | acc]}
-
-        {:def, meta, [{name, _, args} | rest]} = node, acc when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          complexity = calculate_complexity(body)
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, complexity} | acc]}
-
-        {:defp, meta, [{name, _, args} | rest]} = node, acc when is_atom(name) ->
-          arity = count_arity(args)
-          body = extract_body(rest)
-          complexity = calculate_complexity(body)
-          line = Keyword.get(meta, :line, 0)
-          {node, [{name, arity, line, complexity} | acc]}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    Enum.reverse(funs)
-  end
-
-  defp calculate_complexity(nil), do: 0
-
-  defp calculate_complexity(ast) do
-    {_, counts} =
-      Macro.prewalk(ast, %{a: 0, b: 0, c: 0}, fn
-        # Assignments
-        {:=, _, _} = node, acc ->
-          {node, %{acc | a: acc.a + 1}}
-
-        # Branches
-        {:case, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        {:cond, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        {:if, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        {:unless, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        {:with, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        {:->, _, _} = node, acc ->
-          {node, %{acc | b: acc.b + 1}}
-
-        # Conditions
-        {:&&, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:||, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:and, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:or, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:==, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:!=, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:>, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:<, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:>=, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:<=, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        {:when, _, _} = node, acc ->
-          {node, %{acc | c: acc.c + 1}}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    # ABC = sqrt(A^2 + B^2 + C^2)
-    :math.sqrt(counts.a * counts.a + counts.b * counts.b + counts.c * counts.c)
-    |> round()
-  end
-
-  # ── Unused Private Function Detection ──────────────────────────────────
-
-  def detect_unused(file) do
-    with {:ok, content} <- File.read(file) do
-      lines = String.split(content, "\n")
-
-      # Find all defp definitions
-      private_funs =
-        lines
-        |> Enum.with_index(1)
-        |> Enum.flat_map(fn {line, num} ->
-          case Regex.run(~r/^\s*defp\s+(\w+)/, line) do
-            [_, name] -> [{name, num}]
-            _ -> []
-          end
-        end)
-        |> Enum.uniq_by(fn {name, _} -> name end)
-
-      # Check if each private function is called anywhere else in the file
-      private_funs
-      |> Enum.filter(fn {name, _def_line} ->
-        call_pattern =
-          ~r/(?:(?<![.\w])#{Regex.escape(name)}\(|&#{Regex.escape(name)}\/|\|>\s*#{Regex.escape(name)}\b)/
-
-        call_count =
-          lines
-          |> Enum.with_index(1)
-          |> Enum.count(fn {line, _num} ->
-            trimmed = String.trim(line)
-            not String.starts_with?(trimmed, "#") and
-              not Regex.match?(~r/^\s*defp\s+#{Regex.escape(name)}/, line) and
-              Regex.match?(call_pattern, line)
-          end)
-
-        call_count == 0
-      end)
-      |> Enum.map(fn {name, line} -> {name, line} end)
-    else
-      _ -> []
-    end
+  # The tree a single file is compared against: its nearest lib/ ancestor.
+  def tree_for(file) do
+    file
+    |> Path.expand()
+    |> Path.dirname()
+    |> Stream.iterate(&Path.dirname/1)
+    |> Enum.take_while(&(&1 != Path.dirname(&1)))
+    |> Enum.find(Path.dirname(Path.expand(file)), &(Path.basename(&1) == "lib"))
   end
 
   # ── Reporting ──────────────────────────────────────────────────────────
 
-  def report(results, file) do
-    {dupes, complex, unused} = results
-    has_issues = dupes != [] or complex != [] or unused != []
+  defp rel(path), do: Path.relative_to_cwd(path)
 
-    if has_issues do
-      IO.puts("Code Quality Analysis: #{Path.relative_to_cwd(file)}")
+  def report(dupes, complex) do
+    unless dupes == [] do
+      IO.puts("Duplicated function bodies (identical after renaming variables and literals)")
+
+      for group <- dupes do
+        IO.puts("")
+        for f <- group, do: IO.puts("   #{f.name}/#{f.arity}  #{rel(f.file)}:#{f.line}")
+      end
+
       IO.puts("")
-
-      unless dupes == [] do
-        IO.puts("  Duplication Detected")
-
-        for dup <- dupes do
-          pct = round(dup.similarity * 100)
-          IO.puts("   Function `#{dup.name}/#{dup.arity}` (#{pct}% similar)")
-          IO.puts("     #{Path.relative_to_cwd(dup.file1)}:#{dup.line1}")
-          IO.puts("     #{Path.relative_to_cwd(dup.file2)}:#{dup.line2}")
-          IO.puts("   Suggestion: Extract to a shared module")
-          IO.puts("")
-        end
-      end
-
-      unless complex == [] do
-        IO.puts("  High Complexity Detected")
-
-        for {name, arity, line, score} <- complex do
-          IO.puts("   Function `#{name}/#{arity}` — ABC complexity #{score} (threshold: #{@complexity_threshold})")
-          IO.puts("     #{Path.relative_to_cwd(file)}:#{line}")
-          IO.puts("   Suggestion: Break into smaller functions with single responsibilities")
-          IO.puts("")
-        end
-      end
-
-      unless unused == [] do
-        IO.puts("  Unused Private Functions")
-
-        for {name, line} <- unused do
-          IO.puts("   `#{name}` defined at line #{line} but never called")
-          IO.puts("   Suggestion: Remove if no longer needed")
-          IO.puts("")
-        end
-      end
-
-      :issues_found
-    else
-      :ok
+      IO.puts("   Suggestion: extract one shared function (parameterize what differs).")
+      IO.puts("")
     end
-  end
 
-  # ── Directory Scan ─────────────────────────────────────────────────────
+    unless complex == [] do
+      IO.puts("High branch complexity (threshold #{@complexity_threshold})")
 
-  def scan_directory(dir) do
-    files = Path.wildcard(Path.join(dir, "**/*.ex"))
+      for f <- complex do
+        IO.puts("   #{f.name}/#{f.arity}  #{rel(f.file)}:#{f.line}  branch complexity #{f.score}")
+      end
 
-    IO.puts("Scanning #{length(files)} Elixir files in #{dir}...")
-    IO.puts("")
+      IO.puts("")
+      IO.puts("   Suggestion: split into smaller functions or pattern-matched clauses.")
+      IO.puts("   Credo's Refactor.CyclomaticComplexity is the standard check; follow .credo.exs.")
+      IO.puts("")
+    end
 
-    results =
-      files
-      |> Enum.map(fn file ->
-        dupes = detect_duplication(file)
-        complex = analyze_complexity(file)
-        unused = detect_unused(file)
-        {file, dupes, complex, unused}
-      end)
-      |> Enum.filter(fn {_, d, c, u} ->
-        d != [] or c != [] or u != []
-      end)
-
-    if results == [] do
+    if dupes == [] and complex == [] do
       IO.puts("No code quality issues found")
       :ok
     else
-      for {file, dupes, complex, unused} <- results do
-        report({dupes, complex, unused}, file)
-      end
-
-      total =
-        Enum.reduce(results, 0, fn {_, d, c, u}, acc ->
-          acc + length(d) + length(c) + length(u)
-        end)
-
-      IO.puts("Found #{total} issue(s) across #{length(results)} file(s)")
+      IO.puts("Found #{length(dupes)} duplicate group(s), #{length(complex)} complex function(s)")
       :issues_found
     end
   end
 
-  # ── Helpers ────────────────────────────────────────────────────────────
+  # ── Commands ───────────────────────────────────────────────────────────
 
-  defp count_arity(nil), do: 0
-  defp count_arity(args) when is_list(args), do: length(args)
-  defp count_arity(_), do: 0
+  defp scan(paths, checks) do
+    files = Enum.flat_map(paths, &ex_files/1) |> Enum.uniq()
+    IO.puts("Scanning #{length(files)} Elixir file(s) in #{Enum.join(paths, ", ")}...")
+    IO.puts("")
+    funs = Enum.flat_map(files, &functions_in/1)
+    dupes = if :duplication in checks, do: duplicate_groups(funs), else: []
+    complex = if :complexity in checks, do: complex_functions(funs), else: []
+    report(dupes, complex)
+  end
 
-  # ── Main ───────────────────────────────────────────────────────────────
+  # A single file: complexity for that file; duplication of its functions
+  # against every function in its lib/ tree.
+  defp single(file, checks) do
+    target = Path.expand(file)
+    own = functions_in(file)
+
+    dupes =
+      if :duplication in checks do
+        tree = ex_files(tree_for(file)) |> Enum.map(&Path.expand/1) |> Enum.reject(&(&1 == target))
+        others = Enum.flat_map(tree, &functions_in/1)
+
+        (Enum.map(own, &%{&1 | file: target}) ++ others)
+        |> duplicate_groups()
+        |> Enum.filter(fn group -> Enum.any?(group, &(&1.file == target)) end)
+      else
+        []
+      end
+
+    complex = if :complexity in checks, do: complex_functions(own), else: []
+    report(dupes, complex)
+  end
+
+  defp run(checks, [path]) do
+    if File.regular?(path), do: single(path, checks), else: scan([path], checks)
+  end
+
+  defp run(checks, paths) when paths != [], do: scan(paths, checks)
 
   def main(args) do
     result =
       case args do
-        ["duplication", file] ->
-          case detect_duplication(file) do
-            [] -> :ok
-            dupes -> report({dupes, [], []}, file)
-          end
-
-        ["complexity", file] ->
-          case analyze_complexity(file) do
-            [] -> :ok
-            complex -> report({[], complex, []}, file)
-          end
-
-        ["unused", file] ->
-          case detect_unused(file) do
-            [] -> :ok
-            unused -> report({[], [], unused}, file)
-          end
-
-        ["all", file] ->
-          dupes = detect_duplication(file)
-          complex = analyze_complexity(file)
-          unused = detect_unused(file)
-          report({dupes, complex, unused}, file)
-
-        ["scan", dir] ->
-          scan_directory(dir)
-
-        _ ->
-          IO.puts("Elixir Phoenix Guide — Code Quality Analyzer")
-          IO.puts("")
-          IO.puts("Usage:")
-          IO.puts("  elixir code_quality.exs duplication <file>  — detect duplicated functions")
-          IO.puts("  elixir code_quality.exs complexity <file>   — analyze ABC complexity")
-          IO.puts("  elixir code_quality.exs unused <file>       — find unused private functions")
-          IO.puts("  elixir code_quality.exs all <file>          — run all checks on a file")
-          IO.puts("  elixir code_quality.exs scan <directory>    — scan all .ex files in directory")
-          :ok
+        ["scan" | [_ | _] = dirs] -> scan(dirs, [:duplication, :complexity])
+        ["all" | [_ | _] = paths] -> run([:duplication, :complexity], paths)
+        ["duplication" | [_ | _] = paths] -> run([:duplication], paths)
+        ["complexity" | [_ | _] = paths] -> run([:complexity], paths)
+        ["unused" | _] -> unused_moved()
+        _ -> usage()
       end
 
     if result == :issues_found, do: System.halt(1)
+  end
+
+  defp unused_moved do
+    IO.puts("The unused-function check was removed. Use the compiler and xref instead:")
+    IO.puts("  mix compile --warnings-as-errors   # reports every unused private function")
+    IO.puts("  mix xref callers Mod.fun/arity     # who calls a public function")
+    :ok
+  end
+
+  defp usage do
+    IO.puts("""
+    elixir-phoenix-guide code quality analyzer
+
+    Usage:
+      elixir code_quality.exs scan <dir> [<dir> ...]   duplication + complexity over a tree
+      elixir code_quality.exs all <file|dir>           both checks (a file is compared with its lib/ tree)
+      elixir code_quality.exs duplication <file|dir>
+      elixir code_quality.exs complexity <file|dir>
+    """)
+
+    :ok
   end
 end
 

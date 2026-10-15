@@ -1,30 +1,28 @@
 ---
 name: ecto-changeset-patterns
-description: Use when a resource needs multiple changesets (registration vs update), conditional validation, field transforms, or uniqueness validation — changeset composition.
-file_patterns:
-  - "**/schemas/**/*.ex"
-  - "**/accounts/*.ex"
-  - "**/*_schema.ex"
-auto_suggest: true
+description: "Use when a schema needs more than one changeset (registration vs update), conditional validation, field transforms, password/email rules, or uniqueness checks. Not for parent/child forms or cast_assoc (use ecto-nested-associations)."
 ---
 
 # Ecto Changeset Patterns
 
+> Verified against Elixir 1.20, Phoenix 1.8, Ecto 3.14 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Create separate named changesets per operation** — `registration_changeset`, `email_changeset`, `password_changeset`; never overload a single `changeset/2`
-2. **Never require foreign key fields in `cast_assoc` child changesets** — the parent sets them automatically; requiring them causes "can't be blank" errors
-3. **Compose changesets with pipes** — each validation step is a separate function for reuse and clarity
-4. **Use `unsafe_validate_unique` paired with `unique_constraint`** — never one without the other; `unsafe_validate_unique` gives fast UI feedback, `unique_constraint` handles race conditions
-5. **Use `update_change/3` for field transformations** — trimming, downcasing, slugifying happen in the changeset, never in the controller or context
-6. **Accept `opts \\ []` for conditional validation** — allows callers to toggle validation rules without creating yet another changeset function
-7. **Validate at the changeset level, not in context functions** — context functions should be thin wrappers around `Repo` calls
+1. **Create separate named changesets per operation** — `email_changeset`, `password_changeset`, `profile_changeset`; never one `changeset/2` that casts everything
+2. **Never `cast` foreign keys or privileged fields** (`:user_id`, `:org_id`, `:role`, `:confirmed_at`, `:deleted_at`) — set them with `put_change`/`change` from trusted code after a scope-checked lookup; for owned records use the Phoenix 1.8 `changeset(struct, attrs, scope)` shape
+3. **Compose changesets with pipes** — each validation step is a small private function reused across changesets
+4. **Pair `unsafe_validate_unique` with `unique_constraint`** — the first gives live form feedback, the second catches the race; both are case-sensitive unless the column is `citext`
+5. **Use `update_change/3` for normalisation** (trim, downcase, slug) — in the changeset, never in the controller or LiveView; call it after `validate_required`
+6. **Accept `opts \\ []` to skip expensive steps during live validation** — phx.gen.auth's `validate_unique: false` (no DB query per keystroke) and `hash_password: false` (no Bcrypt per keystroke)
+7. **Passwords: `min: 12, max: 72`, plus `max: 72, count: :bytes` before hashing** — Bcrypt only reads the first 72 bytes, and multibyte characters pass a character-count check
+8. **Validate in the changeset, not in context functions** — contexts stay thin wrappers around `Repo` calls
 
 ---
 
 ## Separate Changesets Per Operation
 
-Different operations need different validation rules. Don't overload `changeset/2`.
+The Phoenix 1.8 `phx.gen.auth` `User` schema already works this way. Here it is with a `role` added:
 
 ```elixir
 defmodule MyApp.Accounts.User do
@@ -33,209 +31,179 @@ defmodule MyApp.Accounts.User do
 
   schema "users" do
     field :email, :string
-    field :username, :string
+    field :role, Ecto.Enum, values: [:member, :admin], default: :member
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
-    field :bio, :string
+    field :confirmed_at, :utc_datetime
+    field :authenticated_at, :utc_datetime, virtual: true
 
-    timestamps()
+    timestamps(type: :utc_datetime)
   end
 
-  # Registration — all fields, password hashing
-  def registration_changeset(user, attrs, opts \\ []) do
-    user
-    |> cast(attrs, [:email, :username, :password])
-    |> validate_email(opts)
-    |> validate_username()
-    |> validate_password(opts)
-  end
-
-  # Email change — only email, requires reconfirmation
+  # Generated. 1.8 registration is email-only (magic link) and register_user/1 uses
+  # this changeset; to register extra fields, add a registration_changeset/3 that
+  # pipes email_changeset/3 (see the phoenix-auth-customization skill).
   def email_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email])
     |> validate_email(opts)
   end
 
-  # Password change — only password
+  # Generated
   def password_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:password])
+    |> validate_confirmation(:password, message: "does not match password")
     |> validate_password(opts)
-    |> put_password_hash()
   end
 
-  # Profile update — non-sensitive fields only
-  def profile_changeset(user, attrs) do
-    user
-    |> cast(attrs, [:username, :bio])
-    |> validate_username()
-  end
+  # Privileged fields are never in a cast list. Trusted code sets them explicitly.
+  # confirm_changeset/1 is generated; role_changeset/2 is yours.
+  def confirm_changeset(user), do: change(user, confirmed_at: DateTime.utc_now(:second))
+
+  def role_changeset(user, role) when role in [:member, :admin], do: change(user, role: role)
 end
 ```
 
----
+User-editable extras (username, profile fields) belong in their own changesets, `registration_changeset/3` and `profile_changeset/2` in the `phoenix-auth-customization` skill. If such a changeset cast `:role` or `:confirmed_at`, any user could promote or confirm themselves by adding a form field. Call `role_changeset/2` only from an admin-only context function.
 
-## cast_assoc — Critical Pitfall
-
-The most common source of "can't be blank" errors. Foreign keys are set automatically by the parent — never require them in the child changeset.
+For records owned by a user, the 1.8 generators take the scope as the third argument and set the owner themselves:
 
 ```elixir
-# Parent schema
-defmodule MyApp.Blog.Post do
-  schema "posts" do
-    field :title, :string
-    has_many :ingredients, MyApp.Blog.Ingredient
-
-    timestamps()
-  end
-
-  def changeset(post, attrs) do
-    post
-    |> cast(attrs, [:title])
-    |> validate_required([:title])
-    |> cast_assoc(:ingredients, with: &MyApp.Blog.Ingredient.changeset/2)
-  end
-end
-
-# Child schema — DO NOT require :post_id
-defmodule MyApp.Blog.Ingredient do
-  schema "ingredients" do
-    field :name, :string
-    field :quantity, :string
-    belongs_to :post, MyApp.Blog.Post
-
-    timestamps()
-  end
-
-  # Bad — :post_id is required but set automatically by cast_assoc
-  def changeset(ingredient, attrs) do
-    ingredient
-    |> cast(attrs, [:name, :quantity, :post_id])
-    |> validate_required([:name, :post_id])  # Fails!
-  end
-
-  # Good — only require user-provided fields
-  def changeset(ingredient, attrs) do
-    ingredient
-    |> cast(attrs, [:name, :quantity])
-    |> validate_required([:name])
-  end
+def changeset(post, attrs, user_scope) do
+  post
+  |> cast(attrs, [:title, :body])
+  |> validate_required([:title, :body])
+  |> put_change(:user_id, user_scope.user.id)
 end
 ```
+
+Mass assignment: anything in a `cast` list can be set from a form or JSON body.
+
+<!-- epg:bad -->
+```elixir
+# A user can post user_id of another account, or folder_id of someone else's folder
+|> cast(attrs, [:title, :folder_id, :user_id])
+```
+
+A foreign key the user chooses (`folder_id`) is set from a record loaded through the scope: `folder = get_folder!(scope, folder_id)`, then `put_change(:folder_id, folder.id)` (see `move_image/3` in the `ecto-essentials` skill).
 
 ---
 
 ## Changeset Composition
 
-Break validation into small, reusable functions. Compose with pipes.
+The private validators `phx.gen.auth` generates for the changesets above:
 
 ```elixir
-defmodule MyApp.Accounts.User do
-  # Reusable validation components
-
-  defp validate_email(changeset, opts) do
+defp validate_email(changeset, opts) do
+  changeset =
     changeset
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
     |> validate_length(:email, max: 160)
-    |> maybe_validate_unique_email(opts)
-  end
 
-  defp validate_username(changeset) do
+  if Keyword.get(opts, :validate_unique, true) do
     changeset
-    |> validate_required([:username])
-    |> validate_format(:username, ~r/^[a-zA-Z0-9_]+$/, message: "only letters, numbers, and underscores")
-    |> validate_length(:username, min: 3, max: 30)
-    |> unsafe_validate_unique(:username, MyApp.Repo)
-    |> unique_constraint(:username)
-  end
-
-  defp validate_password(changeset, opts) do
+    |> unsafe_validate_unique(:email, MyApp.Repo)
+    |> unique_constraint(:email)
+    |> validate_email_changed()
+  else
     changeset
-    |> validate_required([:password])
-    |> validate_length(:password, min: 8, max: 72)
-    |> maybe_hash_password(opts)
   end
+end
 
-  defp maybe_validate_unique_email(changeset, opts) do
-    if Keyword.get(opts, :validate_email, true) do
-      changeset
-      |> unsafe_validate_unique(:email, MyApp.Repo)
-      |> unique_constraint(:email)
-    else
-      changeset
-    end
+defp validate_email_changed(changeset) do
+  if get_field(changeset, :email) && get_change(changeset, :email) == nil do
+    add_error(changeset, :email, "did not change")
+  else
+    changeset
   end
+end
 
-  defp maybe_hash_password(changeset, opts) do
-    if Keyword.get(opts, :hash_password, true) && changeset.valid? do
-      changeset
-      |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(get_change(changeset, :password)))
-      |> delete_change(:password)
-    else
-      changeset
-    end
+defp validate_password(changeset, opts) do
+  changeset
+  |> validate_required([:password])
+  |> validate_length(:password, min: 12, max: 72)
+  |> maybe_hash_password(opts)
+end
+
+defp maybe_hash_password(changeset, opts) do
+  hash_password? = Keyword.get(opts, :hash_password, true)
+  password = get_change(changeset, :password)
+
+  if hash_password? && password && changeset.valid? do
+    changeset
+    # Bcrypt truncates at 72 bytes; "é" is 2 bytes, so 72 characters can exceed it
+    |> validate_length(:password, max: 72, count: :bytes)
+    |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
+    |> delete_change(:password)
+  else
+    changeset
   end
 end
 ```
+
+phx.gen.auth doesn't downcase emails: its migration makes `email` a `citext` column, so the unique index and `unsafe_validate_unique` already ignore case. **Variant for a plain `text`/`varchar` email column** (not the generator's code): normalise in the changeset and back it with a `lower(email)` unique index (see the `ecto-essentials` skill):
+
+```elixir
+changeset
+|> validate_required([:email])
+|> update_change(:email, &String.downcase/1)
+|> unique_constraint(:email, name: :users_lower_email_index)
+```
+
+`update_change` after `validate_required` is safe: `validate_required` drops a blank change, so the function never sees `nil`.
 
 ---
 
 ## Conditional Validation with opts
 
-Use `opts` to toggle validation behavior from the caller. This avoids creating a new changeset function for every variation.
+`opts` exist so the same changeset can run cheaply on every `phx-change` and fully on submit:
 
 ```elixir
-# In the schema module
-def registration_changeset(user, attrs, opts \\ []) do
-  user
-  |> cast(attrs, [:email, :username, :password])
-  |> validate_email(opts)
-  |> validate_password(opts)
+# Context (generated) — passes opts through
+def change_user_password(user, attrs \\ %{}, opts \\ []) do
+  User.password_changeset(user, attrs, opts)
 end
 
-# In the context — normal registration
-def register_user(attrs) do
-  %User{}
-  |> User.registration_changeset(attrs)
-  |> Repo.insert()
-end
+# Settings LiveView — runs on every keystroke: no Bcrypt
+def handle_event("validate_password", %{"user" => user_params}, socket) do
+  password_form =
+    socket.assigns.current_scope.user
+    |> Accounts.change_user_password(user_params, hash_password: false)
+    |> to_form(action: :validate)
 
-# In tests — skip hashing for speed
-def register_user_for_test(attrs) do
-  %User{}
-  |> User.registration_changeset(attrs, hash_password: false, validate_email: false)
-  |> Repo.insert()
+  {:noreply, assign(socket, password_form: password_form)}
 end
 ```
+
+On submit the context calls `User.password_changeset(user, attrs)` with the defaults, so the password is hashed. Registration works the same way: `change_user_email(%User{}, params, validate_unique: false)` on `phx-change`, the default (uniqueness checked) on insert.
+
+- `hash_password: false` keeps `:password` in the changes (so the form re-renders it) and skips the deliberately slow Bcrypt hash.
+- `validate_unique: false` skips `unsafe_validate_unique`'s database query; `unique_constraint` still protects the insert.
+- Don't add options that skip validations to make tests faster — use the generated fixtures (see the `testing-essentials` skill).
 
 ---
 
 ## Field Transformations with update_change
 
-Transform field values in the changeset, not in the controller or LiveView.
-
 ```elixir
-def changeset(user, attrs) do
-  user
-  |> cast(attrs, [:email, :username])
-  |> update_change(:email, &String.downcase/1)
-  |> update_change(:username, &String.trim/1)
-  |> update_change(:username, &String.downcase/1)
-end
-
-# For slugs
-def changeset(post, attrs) do
+def changeset(post, attrs, scope) do
   post
-  |> cast(attrs, [:title])
-  |> validate_required([:title])
-  |> generate_slug()
+  |> cast(attrs, [:title, :body])
+  |> validate_required([:title, :body])
+  |> update_change(:title, &String.trim/1)
+  |> put_slug()
+  |> put_change(:user_id, scope.user.id)
 end
 
-defp generate_slug(changeset) do
+defp put_slug(changeset) do
   case get_change(changeset, :title) do
-    nil -> changeset
+    nil ->
+      changeset
+
     title ->
       slug = title |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "-") |> String.trim("-")
       put_change(changeset, :slug, slug)
@@ -245,60 +213,43 @@ end
 
 ---
 
-## Uniqueness Validation
+## Nested Changesets
 
-Always pair `unsafe_validate_unique` with `unique_constraint`. They serve different purposes.
-
-```elixir
-def changeset(user, attrs) do
-  user
-  |> cast(attrs, [:email, :username])
-  # Fast check — queries DB, gives immediate UI feedback
-  # "unsafe" because another insert could happen between check and insert
-  |> unsafe_validate_unique(:email, MyApp.Repo)
-  |> unsafe_validate_unique(:username, MyApp.Repo)
-  # Constraint check — catches race conditions at insert time
-  # Requires a matching unique index in the database
-  |> unique_constraint(:email)
-  |> unique_constraint(:username)
-end
-```
+`cast_assoc`/`cast_embed`, child changesets that must not require the parent's foreign key, and editing child lists from `<.inputs_for>`: see the `ecto-nested-associations` skill.
 
 ---
 
 ## Testing Changesets
 
 ```elixir
-describe "registration_changeset/2" do
-  test "valid with all required fields" do
-    changeset = User.registration_changeset(%User{}, %{
-      email: "test@example.com",
-      username: "testuser",
-      password: "validpassword123"
-    })
-
-    assert changeset.valid?
-  end
-
-  test "invalid without email" do
-    changeset = User.registration_changeset(%User{}, %{
-      username: "testuser",
-      password: "validpassword123"
-    })
-
-    refute changeset.valid?
+describe "email_changeset/3" do
+  test "requires email" do
+    changeset = User.email_changeset(%User{}, %{})
     assert "can't be blank" in errors_on(changeset).email
   end
 
-  test "transforms email to lowercase" do
-    changeset = User.email_changeset(%User{}, %{email: "TEST@Example.COM"})
-    assert get_change(changeset, :email) == "test@example.com"
+  test "rejects an email without @" do
+    changeset = User.email_changeset(%User{}, %{email: "nope"}, validate_unique: false)
+    assert "must have the @ sign and no spaces" in errors_on(changeset).email
+  end
+end
+
+describe "password_changeset/3" do
+  test "rejects 72 characters that exceed 72 bytes" do
+    changeset = User.password_changeset(%User{}, %{password: String.duplicate("é", 72)})
+    assert "should be at most 72 byte(s)" in errors_on(changeset).password
+  end
+
+  test "keeps the plain password when hash_password: false" do
+    changeset = User.password_changeset(%User{}, %{password: "valid password"}, hash_password: false)
+    assert get_change(changeset, :password) == "valid password"
+    refute get_change(changeset, :hashed_password)
   end
 end
 ```
 
 ---
 
-See `ecto-essentials` skill for schema and migration patterns.
-See `ecto-nested-associations` skill for `cast_assoc` with nested data.
-See `testing-essentials` skill for comprehensive testing patterns.
+See the `ecto-essentials` skill for schemas, scoped contexts and migrations.
+See the `ecto-nested-associations` skill for `cast_assoc` with nested data.
+See the `testing-essentials` skill for comprehensive testing patterns.

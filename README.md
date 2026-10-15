@@ -1,62 +1,61 @@
 # Elixir Phoenix Guide for Claude Code
 
-**Version:** 2.4.0 | [Changelog](CHANGELOG.md)
+[Changelog](CHANGELOG.md)
 
-An essential development guide for Claude Code that ensures idiomatic Elixir and Phoenix LiveView code. This plugin includes enforced skills, plugin-native hooks, automated code quality analysis, and reference documentation that actively guide and validate your Elixir development workflow.
+A Claude Code plugin that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 19 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
 
-> **v2.4.0 Released!** Hooks now ship and run entirely inside the plugin — no settings.json merging, no script installation. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **v2.5.0** — every skill re-verified against Elixir 1.20, Phoenix 1.8.15, LiveView 1.2.12, Ecto 3.14 and Oban 2.24: Phoenix 1.8 scopes on every context call, secure upload/PubSub/API examples, forms and async in LiveView, and hooks that only report the lines Claude changed. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What's Included
 
-### Skills (19 essential files)
-Consolidated domain expertise with enforced patterns:
-- **elixir-essentials** - Core Elixir patterns: pattern matching, pipes, with statements, error handling
-- **phoenix-liveview-essentials** - Complete LiveView guide: lifecycle, events, rendering phases, state management
-- **ecto-essentials** - Database operations: schemas, changesets, queries, migrations, associations
-- **phoenix-uploads** - File uploads and static file serving workflow
-- **testing-essentials** - Testing patterns: DataCase/ConnCase setup, fixtures, LiveView tests, TDD workflow
-- **otp-essentials** - OTP patterns: GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry, ETS
-- **oban-essentials** - Background jobs: workers, queues, idempotency, unique jobs, cron, testing with Oban.Testing
-- **code-quality** - Automated code quality detection: duplication, complexity, unused functions
-- **phoenix-liveview-auth** - LiveView authentication: on_mount, current_scope, import conflicts, session handling
-- **ecto-changeset-patterns** - Advanced changesets: separate per operation, cast_assoc pitfalls, composition
-- **phoenix-auth-customization** - Extending phx.gen.auth: custom fields, migrations, fixture updates
-- **phoenix-pubsub-patterns** - Real-time updates: subscriptions, broadcasting from contexts, topic naming
-- **phoenix-authorization-patterns** - Access control: server-side authz, ownership, policy modules, scoped queries
-- **ecto-nested-associations** - Nested data: cast_assoc, cast_embed, Ecto.Multi, cascades, FK indexes
-- **security-essentials** - Security enforcement: atom exhaustion, SQL injection, XSS, open redirects, timing attacks
-- **deployment-gotchas** - Deployment pitfalls: runtime.exs, release migrations, PHX_HOST, health checks, secrets
-- **phoenix-channels-essentials** - Channels: socket auth, topic authorization, Presence, handle_in patterns
-- **telemetry-essentials** - Observability: structured logging, :telemetry, Ecto events, LiveDashboard, metrics
-- **phoenix-json-api** - JSON APIs: :api pipeline, FallbackController, pagination, versioning, Bearer auth
+### Skills (19)
+Each skill opens with a RULES section and a "Verified against" line naming the library versions it was checked against. Skills load on demand when Claude's task matches their description.
 
-Each skill includes a RULES section with 6-11 non-negotiable patterns that must be followed.
+- **elixir-essentials** - Pattern matching, `with`, error contracts, modern Elixir (1.18+): type checker, `JSON`, `dbg`; Phoenix project layout reference
+- **phoenix-liveview-essentials** - Lifecycle, forms (`to_form`, `phx-change`), streams, `assign_async`/`start_async`, JS commands, colocated hooks; LiveView checklist and JS interop references
+- **ecto-essentials** - Scoped context functions, schemas, queries, migrations, upserts, `Repo.transact`; Ecto reference
+- **phoenix-uploads** - `allow_upload`, content-type allowlists, magic-byte checks, external uploads, authorized downloads
+- **testing-essentials** - DataCase/ConnCase, generated fixtures and scopes, LiveView helpers, Mox, `Req.Test`; testing reference
+- **otp-essentials** - GenServer, Supervisor, Task, Registry, ETS, PartitionSupervisor, timeouts
+- **oban-essentials** - Workers, uniqueness, transactional enqueue, Oban 2.24 plugin config, Lifeline, Oban.Testing
+- **code-quality** - Compiler and Credo first, then on-demand duplication and branch-complexity scans
+- **phoenix-liveview-auth** - The generated `UserAuth`: `on_mount`, `live_session`, `mount_current_scope`, sudo mode, logout disconnects
+- **ecto-changeset-patterns** - Separate changesets per operation, password/email rules, never casting privileged fields
+- **phoenix-auth-customization** - Adding fields to the phx.gen.auth user, registration changeset, fixtures
+- **phoenix-pubsub-patterns** - Scoped topics, broadcasting from contexts, streams in `handle_info`, Presence in LiveView
+- **phoenix-authorization-patterns** - `%Scope{}`-first contexts, ownership checks, policies, mass-assignment safety
+- **ecto-nested-associations** - `cast_assoc`/`cast_embed`, `inputs_for` sort/drop params, `on_replace`, cascades, Multi
+- **security-essentials** - Injection, XSS, SSRF, open redirects (`external:`), CSP, safe deserialization, Sobelow
+- **deployment-gotchas** - `mix phx.gen.release --docker`, runtime.exs, release migrations, SSL, rolling deploys, health checks
+- **phoenix-channels-essentials** - Socket auth and tokens, join authorization, `intercept`/`handle_out`, Presence
+- **telemetry-essentials** - Logger metadata, telemetry handlers, metric tag cardinality, OpenTelemetry, LiveDashboard
+- **phoenix-json-api** - phx.gen.json-style JSON views, FallbackController, keyset pagination, hashed API tokens, rate limits
 
-**Note on auto_suggest metadata:** Skills include `auto_suggest: true` and `file_patterns` metadata for future Claude Code enhancements. These fields are not currently active in the Claude Code runtime but are included for forward compatibility.
+Longer reference material lives next to the skill that uses it (`skills/<skill>/*.md`) and Claude reads it only when needed.
 
 ### Hooks (ship inside the plugin)
-Hooks live in `hooks/hooks.json` and activate automatically when the plugin is installed — no settings.json editing, no script copying:
+Hooks live in `hooks/hooks.json` and activate when the plugin is installed. They need `jq`.
 
-| Event | Check |
-|---|---|
-| SessionStart | Detects Phoenix/LiveView/Ecto/Oban and caches project facts (in the plugin data dir, never your repo) |
-| PreToolUse (Bash) | Blocks `mix ecto.reset` and `git push --force` (suggests `--force-with-lease`) |
-| PostToolUse (Write/Edit on .ex/.exs/.heex) | Security (String.to_atom, SQL-injection fragments, open redirects, raw/1, secrets in logs, timing-unsafe ==, IO.inspect/dbg debug calls), Phoenix deprecations (form_for, live_redirect/live_patch, @current_user under 1.8 scopes), missing `@impl true`, migration FK/on_delete safety |
+| Event | Check | Result |
+|---|---|---|
+| SessionStart | Project summary for Claude: Phoenix/LiveView versions (locked and required), scopes, Ecto adapter, Oban, umbrella apps; warns when `jq` is missing | context |
+| PreToolUse (Bash) | `mix ecto.reset` / `mix ecto.drop` unless `MIX_ENV=test` | block |
+| PreToolUse (Bash) | `git push --force`, `-f`, `-uf`, `+refspec` (`--force-with-lease` and `--force-if-includes` allowed) | block |
+| PostToolUse (Write/Edit) | Interpolated SQL in `Repo.query`/`SQL.query` or `fragment()`; `redirect(external: params…)`; removed/deprecated APIs (`form_for`, `live_redirect`, `live_patch`, `push_redirect`) | block |
+| PostToolUse (Write/Edit) | `String.to_atom/1`, `raw/1`, Logger interpolating secrets, `IO.inspect`/`dbg`, timing-unsafe `==` on secrets, missing `@impl true`, migration FK without index or `on_delete`, `@current_user` in a scopes app | review |
 
-Feedback works through **exit code 2 with the reason on stderr** — Claude reads that and fixes the issue. Exit 0 means no findings; there is no separate "warning" tier. See [INSTALL-HOOKS.md](INSTALL-HOOKS.md) for the full write-up, manual install (without the plugin manager), and how to write your own hooks.
+- **block** — exit 2 with the reason on stderr; Claude must deal with it (for Bash, the command doesn't run).
+- **review** — an advisory note (`additionalContext`); Claude decides, nothing is blocked.
+- File checks report **only the lines that tool call changed**, ignore comments and `@doc` text, and skip tests, `deps/`, `_build/` and `node_modules/`.
+- The Bash guard runs only in Elixir projects. To run a blocked command deliberately, prefix it with `EPG_ALLOW=force_push` (or `ecto_reset`, `ecto_drop`) or set that variable in Claude Code's environment.
 
-### Analysis Scripts (3 scripts)
-Automated code quality analysis tools, run on demand from a checkout (they are not installed anywhere by the plugin manager or `install.sh`):
-- **code_quality.exs** - AST-based Elixir analysis: duplication detection, ABC complexity, unused function detection (`elixir scripts/code_quality.exs scan lib/`)
+See [INSTALL-HOOKS.md](INSTALL-HOOKS.md) for details and known limits.
+
+### Analysis Scripts
+Shipped with the plugin under `scripts/` and run on demand (the `code-quality` skill tells Claude how):
+- **code_quality.exs** - Duplicate function bodies across the whole tree (names and variables ignored) and branch complexity. For unused code, use `mix compile --warnings-as-errors` and `mix xref`.
+- **run_analysis.sh** - Runs the scans over `lib/` (or `apps/*/lib` in an umbrella)
 - **detect_project.sh** - Project stack detection used by the SessionStart hook
-- **run_analysis.sh** - Full project analysis runner
-
-### Reference Documentation (4 files)
-Detailed reference material in `docs/reference/` for complex tasks:
-- **project-structure.md** - Directory layout and context boundaries
-- **liveview-checklist.md** - Step-by-step LiveView development checklist
-- **ecto-conventions.md** - Comprehensive Ecto patterns and best practices
-- **testing-guide.md** - Testing patterns for contexts, LiveViews, and schemas
 
 ### Project Template
 - **CLAUDE.md.template** - Project-specific instructions template
@@ -95,14 +94,7 @@ If you already have the plugin installed:
 
 # Select "Marketplaces" → "elixir-phoenix-guide" → "Update"
 # Then update the plugin from the menu
-# Verify version shows 2.4.0 or higher
 ```
-
-**Latest Updates (v2.4.0):**
-- Hooks are now plugin-native (`hooks/hooks.json`) — they run automatically on install with no settings.json merging and no script installation
-- Phoenix 1.8 accuracy fixes across skills: corrected LiveView assigns, test setup, auth imports, and other community-reported issues
-- Differentiated "Use when…" trigger descriptions across all 19 skills, so Claude selects the right skill instead of guessing
-- Total: 19 skills, 3 hook events (SessionStart, PreToolUse, PostToolUse), 3 analysis scripts, 4 reference docs
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
@@ -110,9 +102,9 @@ See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
 Once installed, Claude Code will automatically:
 
-1. **Load skills** based on code context - providing intelligent suggestions for Elixir patterns
-2. **Enforce hooks** in real-time - catching anti-patterns as you write code
-3. **Consult reference docs** when needed - accessing detailed information for complex tasks
+1. **Load skills** when the task matches a skill's description
+2. **Run hooks** on Bash commands and file writes - blocking dangerous commands and flagging risky code
+3. **Read a skill's reference files** when a task needs the detail
 4. **Follow CLAUDE.md** (if present) - respecting project-specific conventions
 
 ### Example Interactions
@@ -148,18 +140,16 @@ def process(_), do: :inactive
 2. Ask Claude to create a LiveView
 3. Observe:
    - Skills guide idiomatic implementation
-   - Hooks catch anti-patterns (missing @impl, security issues, Phoenix deprecations)
-   - Reference docs provide detailed checklists
+   - Hooks flag anti-patterns in the lines Claude wrote (missing @impl, security issues, Phoenix deprecations)
+   - The LiveView checklist is used before finishing
 
 ## What This Optimizes
 
 ### Code Quality
-- **Flags** callbacks without @impl true (reported to Claude after the write, for it to fix)
-- **Blocks** dangerous Bash commands: `mix ecto.reset`, `git push --force`
-- **Flags** security risks: String.to_atom/1, SQL-injection in fragments/raw queries, open redirects, timing-unsafe comparisons, secrets in Logger calls, IO.inspect/dbg left in lib code
-- **Flags** raw/1 (XSS risk) and deprecated Phoenix APIs (form_for, live_redirect/live_patch, @current_user under Phoenix 1.8 scopes)
-- **Checks** migrations for missing FK indexes and missing on_delete strategies
-- **Detects** code duplication and high ABC complexity (threshold: 30) on demand via `elixir scripts/code_quality.exs scan lib/`
+- **Blocks** destructive Bash commands (`mix ecto.reset`/`ecto.drop` outside test, force pushes)
+- **Blocks** near-certain bugs in written code: SQL built by interpolation, `redirect(external:)` from params, removed Phoenix APIs
+- **Flags** for review: `String.to_atom/1`, `raw/1`, secrets in Logger interpolation, timing-unsafe comparisons, debug calls, missing `@impl true`, migration FK indexes and `on_delete`, `@current_user` in scope-based apps
+- **Scans** on demand for duplicated function bodies and branch complexity
 
 ### Developer Experience
 - Proactive guidance on Elixir idioms
@@ -196,66 +186,48 @@ elixir-phoenix-guide/
 ├── INSTALL-HOOKS.md                   # Hook behavior reference
 ├── CLAUDE.md.template                 # Project-specific instructions template
 ├── install.sh                         # Optional extras: CLAUDE.md template + legacy cleanup
-├── skills/                            # Elixir expertise (19 skills)
-│   ├── elixir-essentials/SKILL.md
-│   ├── phoenix-liveview-essentials/SKILL.md
-│   ├── ecto-essentials/SKILL.md
-│   ├── phoenix-uploads/SKILL.md
-│   ├── testing-essentials/SKILL.md
-│   ├── otp-essentials/SKILL.md
-│   ├── oban-essentials/SKILL.md
-│   ├── code-quality/SKILL.md
-│   ├── phoenix-liveview-auth/SKILL.md
-│   ├── ecto-changeset-patterns/SKILL.md
-│   ├── phoenix-auth-customization/SKILL.md
-│   ├── phoenix-pubsub-patterns/SKILL.md
-│   ├── phoenix-authorization-patterns/SKILL.md
-│   ├── ecto-nested-associations/SKILL.md
-│   ├── security-essentials/SKILL.md
-│   ├── deployment-gotchas/SKILL.md
-│   ├── phoenix-channels-essentials/SKILL.md
-│   ├── telemetry-essentials/SKILL.md
-│   └── phoenix-json-api/SKILL.md
+├── VERSION                            # Plugin version (with .claude-plugin/plugin.json)
+├── skills/                            # 19 skills; some carry reference files
+│   ├── elixir-essentials/             # SKILL.md, project-structure.md
+│   ├── phoenix-liveview-essentials/   # SKILL.md, checklist.md, js-interop.md
+│   ├── ecto-essentials/               # SKILL.md, reference.md
+│   ├── testing-essentials/            # SKILL.md, reference.md
+│   └── …                              # 15 more, SKILL.md each
 ├── hooks/
-│   └── hooks.json                    # SessionStart + PreToolUse + PostToolUse config
-├── scripts/                           # Analysis and detection scripts
-│   ├── code_quality.exs              # AST-based Elixir analysis (on demand)
-│   ├── detect_project.sh             # Project stack detection (used by SessionStart)
-│   ├── run_analysis.sh               # Full project analysis runner (on demand)
-│   ├── sync_copilot.sh               # regenerate the Copilot port from skills/
-│   └── hooks/                        # Scripts the shipped hooks actually run
-│       ├── bash_guard.sh             # PreToolUse (Bash)
-│       └── check_file.sh             # PostToolUse (Write|Edit)
+│   └── hooks.json                     # SessionStart + PreToolUse + PostToolUse config
+├── scripts/                           # Shipped with the plugin
+│   ├── code_quality.exs               # Duplication + branch complexity (on demand)
+│   ├── detect_project.sh              # Project stack detection (SessionStart)
+│   ├── run_analysis.sh                # Analysis runner (on demand)
+│   ├── lib/common.sh                  # Shared shell helpers
+│   └── hooks/
+│       ├── bash_guard.sh              # PreToolUse (Bash)
+│       └── check_file.sh              # PostToolUse (Write|Edit|MultiEdit)
 ├── tests/
-│   ├── hooks/run_tests.sh            # Hook test harness (fixture-based)
-│   └── code_quality/run_tests.sh     # code_quality.exs test harness
-└── docs/reference/                    # Reference documentation
-    ├── project-structure.md
-    ├── liveview-checklist.md
-    ├── ecto-conventions.md
-    └── testing-guide.md
+│   ├── hooks/run_tests.sh             # Hook test harness (fixture-based)
+│   └── code_quality/run_tests.sh      # code_quality.exs test harness
+└── dev/                               # Maintainer tools (not used at runtime)
+    ├── check_snippets.exs             # Parses every elixir/heex block in skills/
+    └── sync_copilot.sh                # Regenerates the GitHub Copilot port
 ```
 
 ## Requirements
 
-- Claude Code CLI installed
-- Elixir 1.15+ projects
-- Phoenix 1.7+ (for LiveView features)
+- Claude Code
+- `jq` (for the hooks)
+- Skills target Elixir 1.18+, Phoenix 1.8, LiveView 1.1+, Ecto 3.13+ and Oban 2.20+; most guidance still applies to Phoenix 1.7 apps, but the auth, scope and generator examples assume 1.8
 
 ## Customization
 
-The plugin manager installs skills and hooks from this repo's checkout under
-`~/.claude/plugins/marketplaces/elixir-phoenix-guide/` — it does not copy
+The plugin manager keeps a copy of each installed version under
+`~/.claude/plugins/cache/<marketplace>/elixir-phoenix-guide/<version>/` and runs
+skills, hooks and scripts from there (`${CLAUDE_PLUGIN_ROOT}`). It does not copy
 files into `~/.claude/skills/` or merge anything into `~/.claude/settings.json`.
-To customize behavior, fork the repo (or add a project-level
-`hooks/hooks.json` override) rather than hand-editing the installed checkout,
-since plugin updates overwrite it.
+Plugin updates replace that copy, so don't edit it by hand:
 
-### Adding Custom Skills
-Add new directories with `SKILL.md` files under `skills/` in your fork.
-
-### Modifying Existing Rules
-Edit any skill file or the scripts under `scripts/hooks/` in your fork — changes take effect on next Claude Code restart.
+- **Project-specific rules** go in your project's `CLAUDE.md` (see the template).
+- **Extra hooks** go in your project's `.claude/settings.json`; they run alongside the plugin's.
+- **Changing skills or the plugin's hooks**: fork the repo and install from your fork.
 
 ## Checking Your Version
 
@@ -263,8 +235,8 @@ In a Claude Code session:
 ```bash
 /plugin
 
-# Or check version in the plugin list
-# Navigate to your installed plugins and verify version 2.4.0 or higher
+# Navigate to your installed plugins; the version is shown there
+# (and in the cache path: ~/.claude/plugins/cache/<marketplace>/elixir-phoenix-guide/<version>/)
 ```
 
 ## Troubleshooting
@@ -315,4 +287,4 @@ Inspired by the [Optimizing Claude Code](https://mays.co/optimizing-claude-code)
 
 ---
 
-**Note:** This configuration applies globally to all Elixir projects. For project-specific customizations, use the `CLAUDE.md.template` in your project root.
+**Note:** Once installed, the plugin is active in every project you open. Its skills only load for Elixir work, and the hooks do nothing outside Elixir projects (no `mix.exs`). For project-specific customizations, use the `CLAUDE.md.template` in your project root.

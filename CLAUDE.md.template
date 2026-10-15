@@ -6,15 +6,13 @@
 
 ## Technology Stack
 
-- Elixir 1.15+
-- Phoenix 1.7+
-- Phoenix LiveView
-- PostgreSQL with Ecto
-- TailwindCSS
+- Elixir 1.18+
+- Phoenix 1.8 (scopes, `phx.gen.auth` magic-link auth)
+- Phoenix LiveView 1.1+
+- PostgreSQL with Ecto 3.13+
+- Tailwind CSS v4 + daisyUI
 
 ## Project Structure
-
-See `docs/reference/project-structure.md` for detailed directory layout and organization principles.
 
 **Key directories:**
 - `lib/[your_app]/` - Core business logic and contexts
@@ -56,10 +54,12 @@ Configuration lives in `config/`:
 - `test.exs` - Test environment
 - `prod.exs` - Production
 
-**Never hardcode configuration values.** Always use:
-```elixir
-Application.get_env(:your_app, :config_key)
-```
+- `runtime.exs` - Secrets and anything read from the environment at boot (`System.fetch_env!/1`)
+
+**Never hardcode configuration values.**
+- Values read inside a module body (module attributes, compile-time branches) → `Application.compile_env(:your_app, :key)`
+- Values read at runtime inside functions → `Application.get_env(:your_app, :key)` / `Application.fetch_env!/2`
+- Secrets and per-environment values (database URL, API keys, hosts) → `config/runtime.exs`, never `prod.exs`
 
 ## Elixir Development Rules (MANDATORY)
 
@@ -102,27 +102,25 @@ Use `with` statements for sequential operations that can fail.
 ### LiveView Development
 
 **Key points:**
-- Always add `@impl true` before callbacks
-- Handle both connected and disconnected mount states
-- Subscribe to PubSub only when `connected?(socket)`
-- Return proper tuples: `{:noreply, socket}` or `{:ok, socket}`
+- Always add `@impl true` before the first clause of each callback
+- Pass `@current_scope` as the first argument to every context call
+- Subscribe to PubSub in `mount` only when `connected?(socket)`
+- Use streams for collections and `assign_async`/`start_async` for slow loads
 
 ### Database Operations
 
 **Key points:**
-- Use changesets for all inserts/updates
+- Use changesets for all inserts/updates; never `cast` foreign keys or privileged fields
 - Preload associations to avoid N+1 queries
-- Write operations through context modules
+- Write operations through context modules, scoped to the caller
 - Validate at changeset level, constrain at database level
+- Use `Repo.transact/2` for multi-step writes
 
-## When to Reference Docs
+## Reference Material
 
-Consult these documents when working on specific tasks:
-
-- **Starting a new LiveView?** → `docs/reference/liveview-checklist.md`
-- **Writing database queries?** → `docs/reference/ecto-conventions.md`
-- **Need to understand project layout?** → `docs/reference/project-structure.md`
-- **Writing tests?** → `docs/reference/testing-guide.md`
+Several skills carry longer reference files that Claude reads on demand (no setup needed):
+the LiveView checklist (`phoenix-liveview-essentials`), Ecto reference (`ecto-essentials`),
+Phoenix project layout (`elixir-essentials`), and the testing reference (`testing-essentials`).
 
 ## Skills
 
@@ -135,7 +133,7 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 5. **otp-essentials** - GenServer, Supervisor, Task, Agent, DynamicSupervisor, Registry
 6. **oban-essentials** - Background jobs, workers, queues, idempotency, Oban.Testing
 7. **testing-essentials** - DataCase/ConnCase, fixtures, LiveView tests, TDD workflow
-8. **code-quality** - Automated duplication, complexity, and unused function detection
+8. **code-quality** - Compiler/Credo-first quality workflow plus on-demand duplication and complexity scans
 9. **phoenix-liveview-auth** - on_mount auth, current_scope, import conflicts, session handling
 10. **ecto-changeset-patterns** - Separate changesets, cast_assoc pitfalls, composition, transforms
 11. **phoenix-auth-customization** - Extending phx.gen.auth with custom fields, fixtures
@@ -150,25 +148,26 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 
 ## Hooks
 
-Hooks ship inside the elixir-phoenix-guide plugin (`hooks/hooks.json`) and enforce code quality automatically — nothing to configure in `settings.json`.
+Hooks ship inside the elixir-phoenix-guide plugin (`hooks/hooks.json`) — nothing to configure. They need `jq`.
 
-**Context-aware:** SessionStart parses `mix.exs` and caches project facts (Phoenix version, LiveView, Ecto adapter, Oban) in the plugin data dir (never your repo). The PostToolUse check reads one fact from that cache — `phoenix_has_scope` — to flag `@current_user` and suggest `@current_scope` only in Phoenix 1.8+ scope projects.
+- **SessionStart** summarises the stack (Phoenix/LiveView versions from `mix.lock`, Ecto, Oban, scopes) and caches one fact — whether the project uses 1.8 scopes — in the plugin data dir, never your repo.
+- **PreToolUse (Bash)** blocks destructive commands such as `mix ecto.reset`/`ecto.drop` outside `MIX_ENV=test` and `git push --force` (opt out per command with `EPG_ALLOW=force_push`, etc.).
+- **PostToolUse (Write/Edit)** checks only the lines Claude changed. Near-certain bugs block with feedback; heuristics arrive as advisory context.
 
-| Event | Check |
-|---|---|
-| SessionStart | Detects Phoenix/LiveView/Ecto/Oban and caches project facts |
-| PreToolUse (Bash) | Blocks `mix ecto.reset` and `git push --force` (suggests `--force-with-lease`) |
-| PostToolUse (Write/Edit on .ex/.exs/.heex) | Security (String.to_atom, SQL-injection fragments, open redirects, raw/1, secrets in logs, timing-unsafe ==, IO.inspect/dbg debug calls), Phoenix deprecations (form_for, live_redirect/live_patch, @current_user under 1.8 scopes), missing `@impl true`, migration FK/on_delete safety |
+If a hook flags something, fix it or explain why it's intentional. See the plugin README for the full list of checks.
 
-If a hook triggers, it reports the issue and a fix on stderr — follow the suggestion or explain why it's intentional.
+## Code Quality
 
-## Code Quality Automation
-
-Duplication and ABC-complexity analysis run on demand, not as a hook. From a checkout of the elixir-phoenix-guide repo:
+Run these before committing (or wire them into a `mix precommit` alias):
 
 ```bash
-elixir scripts/code_quality.exs scan lib/
+mix compile --warnings-as-errors
+mix format --check-formatted
+mix credo --strict
+mix test
 ```
+
+The `code-quality` skill adds on-demand duplication and branch-complexity scans; the project's `.credo.exs` thresholds win over the skill's defaults.
 
 ## Development Workflow
 
@@ -183,21 +182,9 @@ elixir scripts/code_quality.exs scan lib/
 
 ## Testing
 
-- Use `mix test` to run tests
+- Use `mix test` to run tests (`mix test --failed` to rerun failures)
 - Tests mirror source structure
-- LiveView tests use `Phoenix.LiveViewTest`
-
-See `docs/reference/testing-guide.md` for comprehensive testing patterns.
-
-## Code Quality
-
-Run these before committing:
-
-```bash
-mix format          # Format code
-mix credo          # Static analysis
-mix test           # Run tests
-```
+- LiveView tests use `Phoenix.LiveViewTest`; use the generated fixtures (`user_fixture/1`, `user_scope_fixture/0`)
 
 ## Architecture Principles
 
@@ -209,7 +196,6 @@ mix test           # Run tests
 
 ## Notes for Claude
 
-- Reference `docs/reference/` for detailed information about specific areas
 - Trust the hooks - if they flag or block something, there's usually a better Elixir pattern
 - Skills provide quick reference for common patterns
 - Use HexDocs MCP to look up dependency documentation (if configured)

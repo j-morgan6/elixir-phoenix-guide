@@ -1,270 +1,343 @@
 ---
 name: security-essentials
-description: Use when code touches user input, tokens, redirects, raw SQL, or logging — injection, XSS, atom exhaustion, timing attacks, audit tooling.
-file_patterns:
-  - "**/controllers/**/*.ex"
-  - "**/*_live.ex"
-  - "**/*_live/*.ex"
-  - "**/*.heex"
-  - "**/user_auth.ex"
-auto_suggest: true
+description: "Use when code touches user input, tokens, redirects, raw SQL, deserialization, outbound HTTP or security headers — injection, XSS, SSRF, open redirects, CSP, timing attacks, Sobelow. Not for permission rules (use phoenix-authorization-patterns)."
 ---
 
 # Security Essentials
 
+> Verified against Elixir 1.20, Phoenix 1.8, LiveView 1.2, Ecto 3.14 — October 2026
+
 ## RULES — Follow these with no exceptions
 
-1. **Never use `String.to_atom/1` on user input** — atoms are never garbage collected; user-controlled atoms exhaust the atom table and crash the BEAM VM. `String.to_existing_atom/1` avoids that risk but still raises `ArgumentError` on unknown input (unhandled 500) — whitelist with a `case` instead of either
-2. **Never interpolate strings into `fragment()` or `SQL.query()`** — always use `?` parameters for fragments and `$1` for raw SQL
-3. **Never redirect to user-controlled URLs** — validate against a whitelist or use verified routes (`~p"..."`)
-4. **Avoid `raw/1` in templates** — Phoenix auto-escapes for a reason; if HTML is required, sanitize first with a library like HtmlSanitizeEx
-5. **Never log sensitive data** — passwords, tokens, secrets, API keys, and credentials must never appear in Logger calls
-6. **Use `Plug.Crypto.secure_compare/2` for token comparison** — never `==`, which enables timing attacks
-7. **Run dependency audits after changes** — `mix hex.audit` checks for retired/deprecated packages (checksum verification against Hex is already automatic via `mix.lock`); `mix deps.audit` (requires adding `{:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}`) checks for known CVEs; `mix sobelow` does static security analysis of your code
+1. **Never use `String.to_atom/1` on user input** — atoms are never garbage collected; `String.to_existing_atom/1` raises on unknown input (a 500). Map known strings with a `case`
+2. **Never build SQL or identifiers from user input** — `fragment` already rejects interpolated strings at compile time; the real holes are `Repo.query`/`SQL.query` with string interpolation and user-chosen columns (`field(p, ^name)`, `identifier(^name)`, `order_by: ^...`). Use `$1` parameters and allowlist columns with a `case`
+3. **Never pass user input to `redirect(external: ...)`** — check the host against an allowlist first. `redirect(to: ...)` already raises on anything but a local path, so keep return paths server-side (session) like phx.gen.auth
+4. **Avoid `raw/1`** — HEEx escapes `{@x}`; if HTML is required, sanitize with HtmlSanitizeEx first
+5. **Keep secrets out of logs** — `redact: true` on sensitive schema fields, extend `:filter_parameters`, and never pass tokens or credentials as Logger metadata or message text
+6. **Compare secrets with `Plug.Crypto.secure_compare/2`** — never `==` or a pattern match
+7. **Never `:erlang.binary_to_term/1` untrusted bytes** — it can build functions and atoms; use JSON, or `Plug.Crypto.non_executable_binary_to_term(bin, [:safe])`
+8. **Give every signed token a purpose and an explicit `max_age`** — `Phoenix.Token.verify(endpoint, "purpose", token, max_age: ...)`; `Phoenix.Token` can't be revoked, so use database tokens (phx.gen.auth `UserToken`) for login sessions and API keys
+9. **Validate outbound URLs (SSRF)** — allowlist scheme and host before `Req.get(url)`, and disable redirects
+10. **Production transport and headers** — keep the generated `force_ssl` (HSTS), and replace the default CSP, which only sets `base-uri` and `frame-ancestors`
+11. **Run audits after dependency changes** — `mix hex.audit`, `mix deps.audit`, `mix sobelow`
 
 ---
 
 ## Atom Table Exhaustion
 
-The BEAM atom table has a fixed limit (default ~1M atoms) and is **never garbage collected**. If an attacker can create arbitrary atoms, they crash the entire VM.
+The atom table has a fixed limit (default 1,048,576) and is never garbage collected. Filling it crashes the whole VM.
 
-**Bad:**
+<!-- epg:bad -->
 ```elixir
-# User controls the atom — creates atoms forever: atom table exhaustion, VM crash
-role = String.to_atom(params["role"])
-
-# Never creates atoms, but raises ArgumentError on unknown input (unhandled 500)
-status = String.to_existing_atom(params["status"])
+role = String.to_atom(params["role"])          # unbounded atom creation
+status = String.to_existing_atom(params["status"])  # ArgumentError (500) on unknown input
 ```
 
-**Good:**
 ```elixir
-# Whitelist approach — only known values become atoms
-case params["role"] do
-  "admin" -> :admin
-  "user" -> :user
-  "moderator" -> :moderator
-  _ -> {:error, :invalid_role}
-end
-
-# Or keep as strings throughout
-def authorize(%{"role" => "admin"}), do: :ok
-def authorize(%{"role" => _}), do: {:error, :unauthorized}
+def parse_role("admin"), do: {:ok, :admin}
+def parse_role("member"), do: {:ok, :member}
+def parse_role(_), do: {:error, :invalid_role}
 ```
+
+For schema fields, `Ecto.Enum` does this mapping for you when you `cast`.
 
 ---
 
 ## SQL Injection
 
-Ecto's query DSL is safe by default. Danger arises with `fragment/1` and `Ecto.Adapters.SQL.query/3`.
+The query DSL parameterizes `^values`, and `fragment("lower(#{x})")` is a compile error ("to prevent SQL injection attacks, fragment(...) does not allow strings to be interpolated"). The risks that remain:
 
-**Bad:**
+<!-- epg:bad -->
 ```elixir
-# String interpolation in fragment — SQL injection
-from(u in User, where: fragment("lower(#{field}) = ?", ^value))
+# Raw SQL built with interpolation — injection
+Repo.query("SELECT * FROM users WHERE email = '#{email}'")
 
-# String interpolation in raw SQL
-Ecto.Adapters.SQL.query(Repo, "SELECT * FROM users WHERE id = #{id}")
+# User picks the column: ?sort=hashed_password orders (and leaks) by the password hash
+order_by(query, [u], asc: field(u, ^String.to_existing_atom(params["sort"])))
 
-# String concatenation in queries
-query = "SELECT * FROM users WHERE name = '" <> name <> "'"
+# identifier/1 is quoted, but the user still chooses which column or table is read
+fragment("SELECT ? FROM users", identifier(^params["column"]))
 ```
 
-**Good:**
 ```elixir
-# Parameterized fragment — safe
-from(u in User, where: fragment("lower(?) = ?", field(u, ^field_name), ^value))
+# Parameters for raw SQL
+Repo.query("SELECT * FROM users WHERE email = $1", [email])
 
-# Parameterized raw SQL — safe
-Ecto.Adapters.SQL.query(Repo, "SELECT * FROM users WHERE id = $1", [id])
+# Allowlist user-chosen columns
+defp sort_field("name"), do: :name
+defp sort_field("inserted_at"), do: :inserted_at
+defp sort_field(_), do: :inserted_at
 
-# Ecto query DSL — always safe
-from(u in User, where: u.name == ^name) |> Repo.one()
+def list_users(params) do
+  from(u in User, order_by: [asc: field(u, ^sort_field(params["sort"])), asc: u.id])
+  |> Repo.all()
+end
 ```
+
+`splice(^list)` sends each element as a parameter and is safe. `constant(^value)` inlines the value into the SQL (escaped), so each distinct value creates a new prepared query: don't feed it user input.
 
 ---
 
 ## Open Redirects
 
-Redirecting to a user-supplied URL lets attackers craft phishing links that appear to come from your domain.
+`redirect(conn, to: path)` raises `ArgumentError` unless `path` starts with a single `/` and contains no `\`, tab or newline. So `to: params["return_to"]` is a crash, not an open redirect. The risk is `external:`, in controllers and in LiveView (`redirect(socket, external: url)`).
 
-**Bad:**
+<!-- epg:bad -->
 ```elixir
-# User controls redirect destination
-def create(conn, %{"redirect_to" => redirect_to} = params) do
-  # ... create resource ...
-  redirect(conn, to: redirect_to)
+def callback(conn, %{"next" => next}) do
+  redirect(conn, external: next)   # https://evil.example/login looks like it came from you
 end
 ```
 
-**Good:**
 ```elixir
-# Use verified routes
-redirect(conn, to: ~p"/dashboard")
+@allowed_hosts ["docs.example.com", "billing.example.com"]
 
-# Or validate against known paths
-@allowed_redirects ["/dashboard", "/profile", "/settings"]
+def callback(conn, %{"next" => next}) do
+  case URI.new(next) do
+    {:ok, %URI{scheme: "https", host: host}} when host in @allowed_hosts ->
+      redirect(conn, external: next)
 
-def create(conn, %{"redirect_to" => redirect_to} = params) do
-  # ... create resource ...
-  if redirect_to in @allowed_redirects do
-    redirect(conn, to: redirect_to)
-  else
-    redirect(conn, to: ~p"/dashboard")
-  end
-end
-
-# Phoenix's built-in approach for auth redirects
-defp maybe_store_return_to(conn) do
-  # Only store relative paths
-  return_to = conn.request_path
-  if String.starts_with?(return_to, "/") and not String.starts_with?(return_to, "//") do
-    put_session(conn, :user_return_to, return_to)
-  else
-    conn
+    _ ->
+      redirect(conn, to: ~p"/")
   end
 end
 ```
+
+For "return to where you were", copy phx.gen.auth: `maybe_store_return_to/1` saves `current_path(conn)` in the session on GET requests and `log_in_user/3` redirects to it with `to:`. The path never comes from a query param.
 
 ---
 
 ## Cross-Site Scripting (XSS)
 
-Phoenix auto-escapes all template output by default. Using `raw/1` bypasses this protection.
+HEEx escapes every `{@value}` in text and attributes. `raw/1` turns that off.
 
-**Bad:**
-```elixir
-# In HEEx template — bypasses escaping
-<%= raw(@user_bio) %>
-<%= Phoenix.HTML.raw(@comment_body) %>
+<!-- epg:bad -->
+```heex
+<div>{raw(@user_bio)}</div>
+<a href={@user_url}>website</a>
 ```
 
-**Good:**
-```elixir
-# Let Phoenix auto-escape (default behavior)
-<%= @user_bio %>
-
-# If HTML rendering is required, sanitize first
-<%= raw(HtmlSanitizeEx.html5(@user_bio)) %>
-
-# Or use Phoenix.HTML.Format for simple formatting
-<%= text_to_html(@user_bio) %>
+```heex
+<div>{@user_bio}</div>
+<div>{raw(HtmlSanitizeEx.basic_html(@user_bio))}</div>
+<p class="whitespace-pre-line">{@comment_body}</p>
 ```
 
-**Phoenix's built-in protections (already active):**
-- All `<%= %>` output is HTML-escaped
-- CSRF tokens in forms (`<.form>` handles this)
-- Content Security Policy headers (add in your endpoint or Plug pipeline)
+- `Phoenix.HTML.Format` was removed in phoenix_html 4. To keep line breaks in plain text, use CSS (`whitespace-pre-line`) rather than generating `<br>` tags.
+- Escaping doesn't make a URL safe: `href={@user_url}` with `javascript:alert(1)` still runs. Validate that the scheme is `http`/`https` before storing user URLs.
+- Uploaded files are another XSS route: see the `phoenix-uploads` skill. Never derive the stored extension or the served content type from the client.
+
+### Content Security Policy
+
+The `:browser` pipeline's `put_secure_browser_headers` sets only `content-security-policy: base-uri 'self'; frame-ancestors 'self';`. That's clickjacking protection, not XSS protection. Pass a real policy:
+
+```elixir
+# router.ex
+@csp "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " <>
+       "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; " <>
+       "base-uri 'self'; form-action 'self'; object-src 'none'"
+
+pipeline :browser do
+  plug :accepts, ["html"]
+  plug :fetch_session
+  plug :fetch_live_flash
+  plug :put_root_layout, html: {MyAppWeb.Layouts, :root}
+  plug :protect_from_forgery
+  plug :put_secure_browser_headers, %{"content-security-policy" => @csp}
+  plug :fetch_current_scope_for_user
+end
+```
+
+The Phoenix 1.8 root layout includes an inline theme `<script>`, which `script-src 'self'` blocks. Move it to its own static file loaded without `defer`, or add a per-request nonce. `connect-src 'self'` covers the LiveView websocket on the same host.
 
 ---
 
 ## Sensitive Data in Logs
 
-Logs are stored in plaintext, shipped to third-party services, and often retained for months. Never log secrets.
+Phoenix replaces any request parameter whose name contains `"password"` with `[FILTERED]`. Extend that list:
 
-**Bad:**
 ```elixir
-Logger.info("User login", email: email, password: password)
-Logger.debug("API call", token: api_token, response: resp)
-Logger.error("Auth failed", credentials: credentials, secret: secret)
+# config/config.exs
+config :phoenix, :filter_parameters, ["password", "token", "secret", "api_key"]
 ```
 
-**Good:**
-```elixir
-Logger.info("User login", email: email, user_id: user.id)
-Logger.debug("API call", endpoint: url, status: resp.status)
-Logger.error("Auth failed", user_id: user_id, reason: :invalid_credentials)
+Mark sensitive schema fields `redact: true`, so `inspect/1` (crash reports, `Logger.error("...#{inspect(user)}")`) prints `**redacted**`. phx.gen.auth already does this for `password` and `hashed_password`.
 
-# Use Logger metadata for request correlation (no secrets)
-Logger.metadata(request_id: conn.assigns[:request_id])
+```elixir
+schema "integrations" do
+  field :api_key, :string, redact: true
+  field :webhook_secret, :string, redact: true
+  timestamps(type: :utc_datetime)
+end
 ```
+
+<!-- epg:bad -->
+```elixir
+Logger.info("API call", token: api_token, response: resp)
+Logger.error("Auth failed for #{email} with #{password}")
+```
+
+```elixir
+require Logger
+
+Logger.info("API call", endpoint: url, status: resp.status)
+Logger.warning("Auth failed", user_id: user_id, reason: :invalid_credentials)
+```
+
+`Plug.RequestId` (in every generated endpoint) already sets `request_id` Logger metadata; don't overwrite it.
 
 ---
 
-## Timing Attacks
+## Timing Attacks and Tokens
 
-Standard `==` comparison short-circuits on the first different byte, leaking information about the secret through response timing.
-
-**Bad:**
+<!-- epg:bad -->
 ```elixir
-# Timing-unsafe — leaks token value byte by byte
-def verify_token(provided_token, stored_token) do
-  provided_token == stored_token
-end
-
-# Also bad — pattern match is also timing-unsafe
-def verify(%{token: token}, token), do: :ok
+def valid_signature?(given, expected), do: given == expected
 ```
 
-**Good:**
 ```elixir
-# Constant-time comparison — same duration regardless of input
-def verify_token(provided_token, stored_token) do
-  Plug.Crypto.secure_compare(provided_token, stored_token)
-end
-
-# Phoenix already uses this for CSRF and session tokens
-# Apply the same principle to your own token comparisons
+def valid_signature?(given, expected), do: Plug.Crypto.secure_compare(given, expected)
 ```
+
+Tokens you look up by a hash (the `UserToken` pattern) don't need this; the database comparison is on a hash the attacker can't steer.
+
+**Signed tokens (`Phoenix.Token`)** default to a 1-day `max_age`. Always say what you mean:
+
+```elixir
+token = Phoenix.Token.sign(MyAppWeb.Endpoint, "email-confirm", user.id)
+
+case Phoenix.Token.verify(MyAppWeb.Endpoint, "email-confirm", token, max_age: 3600) do
+  {:ok, user_id} -> {:ok, user_id}
+  {:error, :expired} -> {:error, :expired}
+  {:error, _invalid} -> {:error, :invalid}
+end
+```
+
+Use a different namespace for each purpose. They're signed, not encrypted: the payload is readable (`Phoenix.Token.encrypt/4` hides it). They can't be revoked before `max_age`, so they're wrong for "log out everywhere" or API keys. Use database tokens for those.
 
 ---
 
-## Dependency Auditing
+## Unsafe Deserialization
 
-Run these commands after adding or updating dependencies:
+`:erlang.binary_to_term/1` on attacker-controlled bytes can create atoms (exhausting the table) and anonymous functions that a later call may execute.
 
-```bash
-# Check for known CVEs in dependencies (requires mix_audit — see below)
-mix deps.audit
-
-# Check for retired/deprecated packages
-# (checksum verification against Hex is automatic via mix.lock — no separate step needed)
-mix hex.audit
-
-# Static security analysis of your code
-mix sobelow
-
-# All three in sequence
-mix deps.audit && mix hex.audit && mix sobelow
+<!-- epg:bad -->
+```elixir
+state = :erlang.binary_to_term(Base.decode64!(params["state"]))
 ```
 
-`mix deps.audit` requires adding the dependency:
-
 ```elixir
-# mix.exs
-{:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
+# Prefer JSON for anything that crosses a trust boundary
+{:ok, state} = JSON.decode(params["state"])
+
+# If it must be ETF: no new atoms, no executable terms
+state = Plug.Crypto.non_executable_binary_to_term(bin, [:safe])
 ```
 
-**Add to CI pipeline:**
+`[:safe]` alone still decodes local funs; `non_executable_binary_to_term/2` rejects them. If the data round-trips through the client, sign it too (`Phoenix.Token`).
+
+---
+
+## SSRF (Outbound Requests to User URLs)
+
+A user-supplied URL (webhook, avatar URL, link preview) lets an attacker make your server call `http://169.254.169.254/` (cloud metadata), `localhost` admin ports, or internal services.
+
 ```elixir
-# In mix.exs aliases
-defp aliases do
-  [
-    "security.check": ["deps.audit", "hex.audit", "sobelow --config"]
-  ]
+@allowed_hosts ["api.partner.example"]
+
+def fetch_partner_resource(url) do
+  case URI.new(url) do
+    {:ok, %URI{scheme: "https", host: host}} when host in @allowed_hosts ->
+      # A redirect is a new, unchecked URL
+      Req.get(url, redirect: false, retry: false)
+
+    _ ->
+      {:error, :url_not_allowed}
+  end
 end
 ```
+
+If you must accept arbitrary hosts (webhooks), resolve the hostname and reject loopback, private (10/8, 172.16/12, 192.168/16), link-local (169.254/16) and IPv6 equivalents. Then connect to the IP you checked, because a second DNS lookup can return a different address (DNS rebinding). Run such fetches from a background job with a short timeout.
+
+---
+
+## File Paths
+
+Never build a filesystem path from client input: `entry.client_name`, `params["file"]`, or any name stored from the client.
+
+<!-- epg:bad -->
+```elixir
+path = Path.join("priv/uploads", params["name"])   # "../../config/runtime.exs"
+send_file(conn, 200, path)
+```
+
+```elixir
+# Store under a server-chosen name; look the record up through a scoped context
+document = Media.get_document!(scope, id)
+send_download(conn, {:file, Media.document_path(document)}, filename: document.original_name)
+
+# If a relative path must come from input, Path.safe_relative/2 rejects ../ escapes
+{:ok, rel} = Path.safe_relative(params["path"], Media.uploads_dir())
+```
+
+`Path.basename/1` isn't a guard: `Path.basename("..")` is `".."`. See the `phoenix-uploads` skill for upload naming and content types.
+
+---
+
+## Session Cookies, HTTPS and HSTS
+
+- **HTTPS**: Phoenix 1.8's `config/prod.exs` sets `force_ssl: [rewrite_on: [:x_forwarded_proto], ...]`. That redirects HTTP to HTTPS and sends HSTS (1 year by default). `force_ssl` is compile-time config: keep it in `prod.exs`, not `runtime.exs`. `rewrite_on` is required behind a TLS-terminating proxy; without it every request looks like HTTP and you get a redirect loop.
+- **Session cookie**: the generated `@session_options` are signed (`signing_salt`), `http_only` (the default) and `same_site: "Lax"`. `secure` is added automatically when the request is HTTPS, which again depends on `rewrite_on` behind a proxy. Set `secure: true` explicitly if unsure. The cookie is signed, not encrypted: the user can read it. Add `encryption_salt:` if you store anything they shouldn't see.
+- **WebSockets**: keep `check_origin` enabled (the default) in production. See the `phoenix-channels-essentials` skill.
 
 ---
 
 ## CSRF Protection
 
-Phoenix includes CSRF protection by default. Don't disable it.
+`protect_from_forgery` in the `:browser` pipeline checks a token on every non-GET request. `<.form>` and `<.link method="delete">` include it for you. A hand-written `<form>` needs it explicitly:
 
-```elixir
-# Phoenix forms automatically include CSRF tokens
-# <.form> component handles this — never use raw <form> tags
-
-# If building a JSON API, CSRF is handled differently:
-# API pipeline in router.ex should NOT include :protect_from_forgery
-pipeline :api do
-  plug :accepts, ["json"]
-  # No :protect_from_forgery — APIs use Bearer tokens instead
-end
+```heex
+<form action={~p"/export"} method="post">
+  <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+  <button type="submit">Export</button>
+</form>
 ```
+
+The `:api` pipeline has no CSRF check because it uses `Authorization` headers, not cookies. If an API endpoint reads the session cookie, it needs CSRF protection again.
 
 ---
 
-See `elixir-essentials` skill for general Elixir patterns.
-See `phoenix-authorization-patterns` skill for access control patterns.
-See `telemetry-essentials` skill for secure logging practices.
+## Dependency and Code Auditing
+
+```elixir
+# mix.exs
+defp deps do
+  [
+    # ...
+    {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+    {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false}
+  ]
+end
+
+defp aliases do
+  [
+    # ...
+    "security.check": ["hex.audit", "deps.audit", "sobelow --exit"]
+  ]
+end
+```
+
+```bash
+mix hex.audit              # retired packages (checksums are already verified via mix.lock)
+mix deps.audit             # known CVEs in dependencies (mix_audit)
+mix sobelow --save-config  # once: writes .sobelow-conf (commit it); later runs pick it up automatically
+mix sobelow --exit         # non-zero exit on findings (low confidence and up), for CI
+```
+
+Sobelow flags `Config.CSP` until the `:browser` pipeline passes a `"content-security-policy"` header (see above). Silence a reviewed finding with a `# sobelow_skip ["Module"]` comment, not by dropping the check.
+
+---
+
+See the `phoenix-authorization-patterns` skill for access control.
+See the `phoenix-json-api` skill for API tokens and rate limiting.
+See the `telemetry-essentials` skill for the logging rules.

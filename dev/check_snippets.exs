@@ -12,7 +12,8 @@
 #     mix run --no-start /path/to/elixir-phoenix-guide/dev/check_snippets.exs /path/to/elixir-phoenix-guide
 #
 # Without LiveView loaded (plain `elixir dev/check_snippets.exs .`), HEEx
-# blocks are skipped with a notice and only Elixir blocks are checked.
+# blocks are skipped with a notice and only Elixir blocks are checked; set
+# EPG_REQUIRE_HEEX=1 (as CI does) to make that an error instead.
 #
 # This parses snippets; it does not compile them against real modules.
 
@@ -39,7 +40,18 @@ defmodule EPG.CheckSnippets do
       |> Enum.sort()
 
     heex? = Code.ensure_loaded?(Phoenix.LiveView.TagEngine)
-    unless heex?, do: IO.puts("note: Phoenix LiveView not loaded — skipping HEEx blocks")
+
+    cond do
+      heex? ->
+        :ok
+
+      System.get_env("EPG_REQUIRE_HEEX") == "1" ->
+        IO.puts(:stderr, "Phoenix LiveView not loaded but EPG_REQUIRE_HEEX=1 — run from a Phoenix app")
+        System.halt(2)
+
+      true ->
+        IO.puts("note: Phoenix LiveView not loaded — skipping HEEx blocks")
+    end
 
     errors = Enum.flat_map(files, &check_file(&1, root, heex?))
 

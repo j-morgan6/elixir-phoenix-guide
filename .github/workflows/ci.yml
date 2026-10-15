@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    name: Hooks & packaging (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS runs the suites under /bin/bash 3.2, the oldest shell the
+        # hooks must support; Ubuntu covers GNU userland and bash 5.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install jq (macOS)
+        if: runner.os == 'macOS'
+        run: command -v jq || brew install jq
+
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck -x scripts/*.sh scripts/hooks/*.sh scripts/lib/*.sh \
+            dev/*.sh install.sh install-codex.sh tests/*/run_tests.sh
+
+      - name: Hook tests
+        run: /bin/bash tests/hooks/run_tests.sh
+
+      - name: Packaging tests
+        run: /bin/bash tests/packaging/run_tests.sh
+
+  elixir:
+    name: Code quality & skill snippets
+    runs-on: ubuntu-24.04
+    env:
+      PHX_VERSION: "1.8.15"
+      # Inside the workspace: actions/cache rejects paths containing "..".
+      CI_APP: ${{ github.workspace }}/.ci/ci_app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.20"
+
+      - name: code_quality.exs tests
+        run: bash tests/code_quality/run_tests.sh
+
+      # The snippet checker parses HEEx with Phoenix LiveView's own engine,
+      # so it runs inside a freshly generated Phoenix app.
+      - name: Restore Phoenix app deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CI_APP }}/deps
+            ${{ env.CI_APP }}/_build
+          key: ci-app-${{ runner.os }}-phx-${{ env.PHX_VERSION }}-elixir-1.20-otp-28
+
+      - name: Generate Phoenix app
+        run: |
+          mix archive.install hex phx_new "$PHX_VERSION" --force
+          mkdir -p "$(dirname "$CI_APP")"
+          cd "$(dirname "$CI_APP")"
+          # 'y' answers "directory exists, continue?" when the deps cache was restored
+          printf 'y\n' | mix phx.new ci_app --no-install --no-ecto --no-mailer --no-dashboard --no-gettext
+
+      - name: Fetch deps
+        working-directory: ${{ env.CI_APP }}
+        run: mix deps.get
+
+      - name: Check skill snippets
+        working-directory: ${{ env.CI_APP }}
+        env:
+          EPG_REQUIRE_HEEX: "1"
+        run: mix run --no-start "$GITHUB_WORKSPACE/dev/check_snippets.exs" "$GITHUB_WORKSPACE"

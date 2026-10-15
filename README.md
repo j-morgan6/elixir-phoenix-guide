@@ -1,6 +1,6 @@
 # Elixir Phoenix Guide for Claude Code and Codex
 
-[Changelog](CHANGELOG.md)
+[![CI](https://github.com/j-morgan6/elixir-phoenix-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/j-morgan6/elixir-phoenix-guide/actions/workflows/ci.yml) · [Changelog](CHANGELOG.md)
 
 A Claude Code plugin (with Codex support for the skills) that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 19 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
 

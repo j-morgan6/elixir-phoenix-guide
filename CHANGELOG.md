@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- GitHub Actions CI: hook and packaging suites on Ubuntu and macOS (`/bin/bash` 3.2), shellcheck, the `code_quality.exs` suite, and `dev/check_snippets.exs` inside a freshly generated Phoenix 1.8 app (`EPG_REQUIRE_HEEX=1` makes it fail rather than skip HEEx blocks when LiveView isn't loaded).
+- Skill frontmatter lint in `tests/packaging/run_tests.sh`: only `name`/`description`, name matches the directory, unique "Use when…" descriptions, and a "Verified against" line under each H1.
+
 ## [2.5.1] - 2026-10-15
 
 ### Added

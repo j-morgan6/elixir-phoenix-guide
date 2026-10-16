@@ -24,7 +24,7 @@ description: "Use when writing LiveView modules or HEEx templates — mount/hand
 
 Before finishing or reviewing a LiveView, walk through [the LiveView checklist](checklist.md). For hook callbacks, `push_event` payloads, `ColocatedJS`/`ColocatedCSS` setup and runtime hooks, read [the JS interop reference](js-interop.md).
 
-Related skills: `phoenix-liveview-auth` (`live_session`, `on_mount` auth), `phoenix-pubsub-patterns` (broadcasting), `phoenix-uploads` (`allow_upload`, consuming entries), `testing-essentials` (LiveView tests).
+Related skills: `phoenix-liveview-auth` (`live_session`, `on_mount` auth), `phoenix-pubsub-patterns` (broadcasting), `phoenix-uploads` (`allow_upload`, consuming entries), `testing-essentials` (LiveView tests), `phoenix-tailwind-daisyui` (Tailwind v4 `@source`, daisyUI themes, extending `core_components`).
 
 ---
 
@@ -300,7 +300,7 @@ slot :footer
 
 def post_card(assigns) do
   ~H"""
-  <article class={["card", @compact && "card-compact"]} {@rest}>
+  <article class={["card", @compact && "card-sm"]} {@rest}>
     <h3>{@post.title}</h3>
     {render_slot(@inner_block)}
     <footer :if={@footer != []}>{render_slot(@footer)}</footer>

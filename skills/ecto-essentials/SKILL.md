@@ -77,6 +77,8 @@ end
 
 ## Context Pattern (scoped)
 
+To generate this shape, or an org-scoped variant with `--scope org`, see the `phoenix-scopes-and-generators` skill.
+
 Mirror `mix phx.gen.context` in 1.8: scope first, owner filter on every read, ownership assert on every write. (The generator also broadcasts `{:created | :updated | :deleted, image}` after each write; see the `phoenix-pubsub-patterns` skill.)
 
 ```elixir
@@ -193,6 +195,8 @@ images =
 ```
 
 When you also filter on the association, join and preload from the join in one query: `join(query, :inner, [i], f in assoc(i, :folder)) |> preload([_i, f], folder: f)`.
+
+Join-preload vs separate-query trade-offs, per-parent limits and N+1 detection: see the `ecto-queries-performance` skill.
 
 ## Transactions — `Repo.transact/2`
 
@@ -316,6 +320,8 @@ end
 ```
 
 For data backfills or anything without a natural inverse, write `up/0` and `down/0`.
+
+For tables with live traffic (concurrent indexes, `lock_timeout`, `NOT NULL` and foreign keys without long locks, backfills), see the `ecto-migrations-safety` skill.
 
 ## Reference
 

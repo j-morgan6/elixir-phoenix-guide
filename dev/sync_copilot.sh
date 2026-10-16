@@ -3,6 +3,8 @@
 # Instruction files keep their existing applyTo frontmatter; bodies are
 # replaced with the corresponding SKILL.md body (first frontmatter block stripped).
 set -euo pipefail
+TMPDIR_SYNC="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_SYNC"' EXIT
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/copilot/.github/instructions"
 
@@ -30,7 +32,21 @@ elixir-essentials/project-structure.md|Phoenix Project Structure
 phoenix-liveview-essentials/checklist.md|LiveView Checklist
 phoenix-liveview-essentials/js-interop.md|LiveView JS Interop
 testing-essentials/reference.md|Testing Reference
+ecto-migrations-safety/reference.md|Ecto Migrations Reference
+ecto-queries-performance/reference.md|Ecto Queries Reference
+http-clients-req/reference.md|HTTP Clients Reference
 "
+
+# Every supporting file must be mapped above, or its links would dangle in
+# the Copilot port.
+for f in "$ROOT"/skills/*/*.md; do
+  case "$f" in */SKILL.md) continue ;; esac
+  rel="${f#"$ROOT/skills/"}"
+  if ! printf '%s\n' "$SUPPORTING" | grep -q "^$rel|"; then
+    echo "ERROR: $rel is not mapped in SUPPORTING (dev/sync_copilot.sh)" >&2
+    exit 1
+  fi
+done
 
 # rewrite_links SKILL -> rewrites a skill body (stdin) for Copilot:
 #   [text](file.md)  -> text (see "<Section>" in AGENTS.md)
@@ -71,6 +87,35 @@ demote_headings() {
        !fence && /^#+ / { print "#" $0; next }
        { print }'
 }
+
+# Copilot README: instruction count, applyTo table and file tree are
+# generated from the instruction files so they can't drift.
+README="$ROOT/copilot/README.md"
+if [ -f "$README" ]; then
+  rows="$TMPDIR_SYNC/rows"; tree="$TMPDIR_SYNC/tree"
+  : > "$rows"; : > "$tree"
+  count=0; last=""
+  for path in "$DEST"/*.instructions.md; do count=$((count + 1)); last=$(basename "$path"); done
+  for path in "$DEST"/*.instructions.md; do
+    f=$(basename "$path")
+    name="${f%.instructions.md}"
+    apply=$(sed -n 's/^applyTo:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$path" | head -1)
+    # shellcheck disable=SC2016 # literal backticks for markdown code spans
+    printf '| `%s` | `%s` |\n' "$name" "$apply" >> "$rows"
+    if [ "$f" = "$last" ]; then branch='└──'; else branch='├──'; fi
+    printf '│   │   %s %s\n' "$branch" "$f" >> "$tree"
+  done
+  awk -v rows="$rows" -v tree="$tree" -v count="$count" '
+    /^### [0-9]+ Instructions$/ { print "### " count " Instructions"; next }
+    { gsub(/It ships [0-9]+ context-aware instructions/, "It ships " count " context-aware instructions") }
+    /^\| Instruction \| Applies To \|/ { print; getline; print; while ((getline line < rows) > 0) print line; intable = 1; next }
+    intable && /^\|/ { next }
+    { intable = 0 }
+    /^│   │   [├└]── .*\.instructions\.md$/ { if (!treedone) { while ((getline line < tree) > 0) print line; treedone = 1 }; next }
+    { print }
+  ' "$README" > "$README.tmp" && mv "$README.tmp" "$README"
+  echo "regenerated README instruction table ($count instructions)"
+fi
 
 AGENTS="$ROOT/copilot/AGENTS.md"
 {

@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/j-morgan6/elixir-phoenix-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/j-morgan6/elixir-phoenix-guide/actions/workflows/ci.yml) · [Changelog](CHANGELOG.md)
 
-A Claude Code plugin (with Codex support for the skills) that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 19 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
+A Claude Code plugin (with Codex support for the skills) that keeps Claude's Elixir and Phoenix code idiomatic and current. It ships 24 skills checked against Phoenix 1.8's generators, plugin-native hooks that catch dangerous commands and risky code as Claude writes it, and on-demand analysis scripts.
 
-> **v2.5.0** — every skill re-verified against Elixir 1.20, Phoenix 1.8.15, LiveView 1.2.12, Ecto 3.14 and Oban 2.24: Phoenix 1.8 scopes on every context call, secure upload/PubSub/API examples, forms and async in LiveView, and hooks that only report the lines Claude changed. See [CHANGELOG.md](CHANGELOG.md).
+> **v2.6.0** — five new skills, each verified against the library source and a generated Phoenix 1.8 app: Phoenix 1.8 scopes and generators, Tailwind v4 + daisyUI, zero-downtime Ecto migrations, Ecto query performance, and HTTP clients with Req. Codex installs the plugin directly with `codex plugin add`. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What's Included
 
-### Skills (19)
+### Skills (24)
 Each skill opens with a RULES section and a "Verified against" line naming the library versions it was checked against. Skills load on demand when Claude's task matches their description.
 
 - **elixir-essentials** - Pattern matching, `with`, error contracts, modern Elixir (1.18+): type checker, `JSON`, `dbg`; Phoenix project layout reference
@@ -30,6 +30,13 @@ Each skill opens with a RULES section and a "Verified against" line naming the l
 - **phoenix-channels-essentials** - Socket auth and tokens, join authorization, `intercept`/`handle_out`, Presence
 - **telemetry-essentials** - Logger metadata, telemetry handlers, metric tag cardinality, OpenTelemetry, LiveDashboard
 - **phoenix-json-api** - phx.gen.json-style JSON views, FallbackController, keyset pagination, hashed API tokens, rate limits
+
+**New in 2.6.0:**
+- **phoenix-scopes-and-generators** - Phoenix 1.8 scopes: the generated %Scope{} and config :scopes keys, phx.gen.* with --scope/--no-scope, adding an org scope (config entry, plug + on_mount, test helpers), adopting scopes in pre-1.8 apps
+- **phoenix-tailwind-daisyui** - Tailwind v4 in app.css (@source, @plugin, no tailwind.config.js), dynamic class names, daisyUI themes and dark mode, extending core_components (<.input>, <.button>, <.icon>, <.table>), Layouts.app/flash, accessibility
+- **ecto-migrations-safety** - Zero-downtime PostgreSQL migrations: concurrent indexes, migration locks, lock_timeout, NOT NULL/foreign keys via NOT VALID, batched backfills, expand-and-contract renames
+- **ecto-queries-performance** - N+1 and preload strategy, dynamic/subquery/exists composition, counting, Repo.stream, locking and optimistic locking, insert_all bulk upserts, EXPLAIN, query-driven indexes, prepare_query tenancy guards
+- **http-clients-req** - Calling external APIs with Req 0.7: client modules, retries/Retry-After, timeouts, idempotency keys, JSON bodies, SSRF-safe redirects, Finch pools, Req.Test/Mox, telemetry and circuit breaking
 
 Longer reference material lives next to the skill that uses it (`skills/<skill>/*.md`) and Claude reads it only when needed.
 
@@ -86,15 +93,16 @@ cd elixir-phoenix-guide
 
 ### Codex
 
-The skills also work in OpenAI Codex (hooks are Claude Code only). Either load the repo as a Codex plugin through `.codex-plugin/plugin.json`, or install the skills for the current user from a checkout:
+The skills also work in OpenAI Codex (hooks are Claude Code only). Install them as a Codex plugin:
 
 ```bash
-git clone https://github.com/j-morgan6/elixir-phoenix-guide.git
-cd elixir-phoenix-guide
-./install-codex.sh
+codex plugin marketplace add j-morgan6/elixir-phoenix-guide
+codex plugin add elixir-phoenix-guide@elixir-phoenix-guide
 ```
 
-This copies every skill directory (including its reference files) into `${CODEX_HOME:-~/.codex}/skills` and points the `code-quality` skill at this checkout's `scripts/`, so keep the checkout. Re-run it after `git pull` to update, then restart Codex.
+Codex reads the same marketplace as Claude Code and the manifest in `.codex-plugin/plugin.json`, and loads every skill with its reference files. To update, upgrade the marketplace (`codex plugin marketplace upgrade elixir-phoenix-guide`) and re-add the plugin.
+
+Without the plugin system, `./install-codex.sh` from a checkout copies the skill directories into `${CODEX_HOME:-~/.codex}/skills` instead (keep the checkout: the `code-quality` skill runs its scripts from there).
 
 ### Updating to Latest Version
 
@@ -201,12 +209,12 @@ elixir-phoenix-guide/
 ├── install-codex.sh                   # Installs the skills for OpenAI Codex
 ├── .codex-plugin/plugin.json          # Codex plugin manifest
 ├── VERSION                            # Plugin version (also in both plugin.json manifests)
-├── skills/                            # 19 skills; some carry reference files
+├── skills/                            # 24 skills; some carry reference files
 │   ├── elixir-essentials/             # SKILL.md, project-structure.md
 │   ├── phoenix-liveview-essentials/   # SKILL.md, checklist.md, js-interop.md
 │   ├── ecto-essentials/               # SKILL.md, reference.md
 │   ├── testing-essentials/            # SKILL.md, reference.md
-│   └── …                              # 15 more, SKILL.md each
+│   └── …                              # 20 more (SKILL.md, some with reference.md)
 ├── hooks/
 │   └── hooks.json                     # SessionStart + PreToolUse + PostToolUse config
 ├── scripts/                           # Shipped with the plugin

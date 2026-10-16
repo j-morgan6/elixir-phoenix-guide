@@ -501,25 +501,25 @@ defmodule MyApp.WeatherTest do
       Req.Test.json(conn, %{"celsius" => 21.5})
     end)
 
-    assert {:ok, 21.5} = MyApp.Weather.celsius("Lisbon")
+    assert {:ok, 21.5} = MyApp.Weather.current("Lisbon")
   end
 
   test "maps a 503 to an error" do
     Req.Test.stub(MyApp.Weather, &Plug.Conn.send_resp(&1, 503, "down"))
-    assert {:error, {:http, 503}} = MyApp.Weather.celsius("Lisbon")
+    assert {:error, {:unexpected_response, 503}} = MyApp.Weather.current("Lisbon")
   end
 
   test "a transport error, then a good reply" do
     Req.Test.expect(MyApp.Weather, &Req.Test.transport_error(&1, :econnrefused))
     Req.Test.expect(MyApp.Weather, &Req.Test.json(&1, %{"celsius" => 3.0}))
 
-    assert {:error, %Req.TransportError{}} = MyApp.Weather.celsius("Oslo")
-    assert {:ok, 3.0} = MyApp.Weather.celsius("Oslo")
+    assert {:error, %Req.TransportError{}} = MyApp.Weather.current("Oslo")
+    assert {:ok, 3.0} = MyApp.Weather.current("Oslo")
   end
 end
 ```
 
-`Req.Test.expect/3` registrations are consumed in order. For a request made from a GenServer, `Req.Test.allow(MyApp.Weather, self(), pid)`.
+`Req.Test.expect/3` registrations are consumed in order. Processes the test starts (`Task`, `start_supervised!`) find its stubs through `$callers`/`$ancestors`; for a process the application started, call `Req.Test.allow(MyApp.Weather, self(), pid)`.
 
 ---
 

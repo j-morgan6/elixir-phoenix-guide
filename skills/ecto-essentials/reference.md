@@ -122,7 +122,7 @@ Repo.exists?(from i in Image, where: i.folder_id == ^folder_id)
 Repo.all_by(Image, folder_id: folder_id, user_id: user_id)
 ```
 
-Preloading a custom query with `limit` limits across **all** parents, not per parent. For "latest N per parent" use a lateral join or a window function.
+Preloading a custom query with `limit` limits across **all** parents, not per parent. For "latest N per parent" use a lateral join or a window function. A worked window-function version is in the `ecto-queries-performance` skill.
 
 ## Repo Return Shapes
 
@@ -159,7 +159,9 @@ create constraint(:images, :byte_size_must_be_positive, check: "byte_size > 0")
 execute "CREATE EXTENSION IF NOT EXISTS citext", ""
 ```
 
-Not reversible in `change/0`: `remove/1` (no type), `modify/3` without `from:`, `execute/1`, `remove_if_exists`, `drop table(...)`, `drop constraint(...)`. Use the forms above or write `up/0` and `down/0`.
+Not reversible in `change/0`: `remove/1` (no type), `modify/3` without `from:`, `execute/1`, `remove_if_exists`, `drop table(...)`, `drop constraint(...)`, and `flush()` (raises on rollback). Use the forms above or write `up/0` and `down/0`.
+
+Reversible isn't the same as safe on a table with live traffic: renames, drops, `NOT NULL` and non-concurrent indexes there are covered in the `ecto-migrations-safety` skill.
 
 Generate with `mix ecto.gen.migration create_images`; never edit a migration that has already run in another environment — add a new one.
 

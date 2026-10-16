@@ -31,7 +31,7 @@ mix phx.gen.auth Accounts User users --live      # or --no-live for controllers
 - `lib/my_app_web/user_auth.ex`, `controllers/user_session_controller.ex`
 - `--live`: `live/user_live/registration.ex`, `login.ex`, `confirmation.ex`, `settings.ex`; `--no-live`: registration, session and settings controllers + templates
 - `test/support/fixtures/accounts_fixtures.ex` and tests for all of the above
-- a `config :my_app, :scopes` entry so later `phx.gen.live`/`phx.gen.context` runs generate scoped code
+- a `config :my_app, :scopes` entry so later `phx.gen.live`/`phx.gen.context` runs generate scoped code (see the `phoenix-scopes-and-generators` skill)
 
 Users register with an email only, receive a magic link, and may set a password later in settings.
 
@@ -60,7 +60,7 @@ defmodule MyApp.Repo.Migrations.AddUsernameToUsers do
 end
 ```
 
-On a table that already has rows, add the column nullable, backfill, then add `null: false` in a later migration.
+On a table that already has rows, add the column nullable, backfill, then add `NOT NULL` and build the unique index with `concurrently: true` in later migrations (the steps are in the `ecto-migrations-safety` skill).
 
 ### 2. Schema — add one line
 

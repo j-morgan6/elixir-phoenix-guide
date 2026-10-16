@@ -259,6 +259,8 @@ end
 
 If you must accept arbitrary hosts (webhooks), resolve the hostname and reject loopback, private (10/8, 172.16/12, 192.168/16), link-local (169.254/16) and IPv6 equivalents. Then connect to the IP you checked, because a second DNS lookup can return a different address (DNS rebinding). Run such fetches from a background job with a short timeout.
 
+Req strips only `authorization` on cross-host redirects; custom API-key headers are forwarded. See the `http-clients-req` skill.
+
 ---
 
 ## File Paths

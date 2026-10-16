@@ -87,3 +87,29 @@ jobs:
         env:
           EPG_REQUIRE_HEEX: "1"
         run: mix run --no-start "$GITHUB_WORKSPACE/dev/check_snippets.exs" "$GITHUB_WORKSPACE"
+
+  codex:
+    name: Codex plugin install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      # Installs the plugin with the real Codex CLI into a throwaway
+      # CODEX_HOME (no login needed) and checks every skill arrived.
+      - name: Install with codex plugin add
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          mkdir -p "$CODEX_HOME"
+          npx -y @openai/codex@latest plugin marketplace add "$GITHUB_WORKSPACE"
+          npx -y @openai/codex@latest plugin add elixir-phoenix-guide@elixir-phoenix-guide
+          npx -y @openai/codex@latest plugin list | tee list.txt
+          grep -E "elixir-phoenix-guide@elixir-phoenix-guide +installed, enabled +$(cat VERSION)" list.txt
+          want=$(find skills -name SKILL.md | wc -l)
+          got=$(find "$CODEX_HOME/plugins/cache" -path '*/skills/*/SKILL.md' | wc -l)
+          echo "skills: want $want, got $got"
+          [ "$want" -eq "$got" ]

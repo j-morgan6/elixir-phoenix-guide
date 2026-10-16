@@ -76,6 +76,8 @@ end
 
 phx.gen.auth (1.8) registration is email-only. `user_fixture/1` already confirms the user via magic link; use `unconfirmed_user_fixture/1` for the unconfirmed case and `set_password/1` when a test needs a password. When you add a field to users, add it to `valid_user_attributes/1` — don't write a new user fixture.
 
+Fixtures for a custom scope entry (`org_scope_fixture/0`, its `test_setup_helper`) are in the `phoenix-scopes-and-generators` skill.
+
 ---
 
 ## Context Test Skeleton
@@ -246,39 +248,41 @@ Mox expectations are per-process. Calls from `Task`s and LiveViews started by th
 Req is Phoenix 1.8's default HTTP client. Route requests through a named `Req.Test` plug in test config; stubs are per-test and async-safe.
 
 ```elixir
-# lib/my_app/weather.ex
+# lib/my_app/weather.ex (trimmed; the full client is in the http-clients-req skill)
 defmodule MyApp.Weather do
-  def celsius(city) do
-    [base_url: "https://api.weather.example", url: "/current", params: [city: city]]
-    |> Keyword.merge(Application.get_env(:my_app, :weather_req_options, []))
+  def current(city) do
+    req_options = :my_app |> Application.get_env(__MODULE__, []) |> Keyword.get(:req_options, [])
+
+    [base_url: "https://api.weather.example", url: "/v1/current", params: [city: city]]
+    |> Keyword.merge(req_options)
     |> Req.request()
     |> case do
-      {:ok, %Req.Response{status: 200, body: %{"celsius" => c}}} -> {:ok, c}
-      {:ok, %Req.Response{status: status}} -> {:error, {:http, status}}
+      {:ok, %Req.Response{status: 200, body: %{"celsius" => celsius}}} -> {:ok, celsius}
+      {:ok, %Req.Response{status: status}} -> {:error, {:unexpected_response, status}}
       {:error, exception} -> {:error, exception}
     end
   end
 end
 
 # config/test.exs — retry: false or transport-error tests sleep through Req's backoff
-# config :my_app, :weather_req_options, plug: {Req.Test, MyApp.Weather}, retry: false
+# config :my_app, MyApp.Weather, req_options: [plug: {Req.Test, MyApp.Weather}, retry: false]
 
 defmodule MyApp.WeatherTest do
   use ExUnit.Case, async: true
 
   test "parses the temperature" do
     Req.Test.stub(MyApp.Weather, fn conn -> Req.Test.json(conn, %{"celsius" => 21.5}) end)
-    assert {:ok, 21.5} = MyApp.Weather.celsius("Lisbon")
+    assert {:ok, 21.5} = MyApp.Weather.current("Lisbon")
   end
 
   test "surfaces transport errors" do
     Req.Test.stub(MyApp.Weather, &Req.Test.transport_error(&1, :timeout))
-    assert {:error, %Req.TransportError{reason: :timeout}} = MyApp.Weather.celsius("Lisbon")
+    assert {:error, %Req.TransportError{reason: :timeout}} = MyApp.Weather.current("Lisbon")
   end
 end
 ```
 
-Use `Req.Test.expect/3` + `setup {Req.Test, :verify_on_exit!}` when the number of calls matters.
+Use `Req.Test.expect/3` + `setup {Req.Test, :verify_on_exit!}` when the number of calls matters. Client design, retry policy, allowances for app-started processes and Finch pools are in the `http-clients-req` skill.
 
 ---
 

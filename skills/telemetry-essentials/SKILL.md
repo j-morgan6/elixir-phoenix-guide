@@ -226,7 +226,7 @@ defmodule MyApp.SlowQueryLogger do
 end
 ```
 
-A high `queue_ms` means the pool is too small or connections are held too long. A high query time means the query itself needs work.
+A high `queue_ms` means the pool is too small or connections are held too long. A high query time means the query itself needs work. To act on a slow query (EXPLAIN, indexes, preloads), see the `ecto-queries-performance` skill.
 
 ---
 
@@ -292,7 +292,7 @@ OpentelemetryEcto.setup([:my_app, :repo])
 OpentelemetryOban.setup()
 ```
 
-These come from `opentelemetry_bandit`, `opentelemetry_phoenix`, `opentelemetry_ecto` and `opentelemetry_oban`. Per-user ids go on spans as attributes, never as metric tags.
+These come from `opentelemetry_bandit`, `opentelemetry_phoenix`, `opentelemetry_ecto` and `opentelemetry_oban`. Per-user ids go on spans as attributes, never as metric tags. For outbound HTTP spans (`OpentelemetryReq`) and per-API Req metrics, see the `http-clients-req` skill.
 
 ---
 

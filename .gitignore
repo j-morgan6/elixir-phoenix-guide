@@ -30,3 +30,6 @@ opencode/
 # Internal planning documents (not for public repo)
 ROADMAP.md
 RELEASE.md
+
+# claude plugin eval output
+evals/results/

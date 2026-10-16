@@ -1,6 +1,6 @@
 ---
 name: security-essentials
-description: "Use when code touches user input, tokens, redirects, raw SQL, deserialization, outbound HTTP or security headers — injection, XSS, SSRF, open redirects, CSP, timing attacks, Sobelow. Not for permission rules (use phoenix-authorization-patterns)."
+description: "Use when Elixir/Phoenix code handles params or other user input, String.to_atom on external strings, tokens, redirects, raw SQL, deserialization, outbound HTTP or security headers, or when asked to review code for security — injection, XSS, atom exhaustion, SSRF, open redirects, CSP, timing attacks, Sobelow. Not for permission rules (use phoenix-authorization-patterns)."
 ---
 
 # Security Essentials

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-10-16
+
+### Added
+- **Skill-trigger evals** (`evals/triggers/`, 51 cases) for `claude plugin eval`: two realistic prompts per skill asserting the skill fires, wrong-sibling checks for commonly confused pairs, and non-Elixir prompts that must fire no skill. First baseline: 47/51 cases passed.
+
+### Fixed
+- Skill descriptions that didn't trigger on short, self-contained requests (Claude answered from memory instead of loading the skill): `elixir-essentials` (0/4 runs → 6/6), `security-essentials` (e.g. "is `String.to_atom` on a param safe?", 0/2 → 2/3) and `ecto-changeset-patterns` (cross-field validation, 1/2 → 3/3). After the change the full suite passes 51/51.
+
 ## [2.6.0] - 2026-10-15
 
 Five new skills (24 in total). Each was written against the library source and a generated Phoenix 1.8.15 app, and its examples were run: generators in a scratch app, migrations against PostgreSQL 16 with a 2M-row table, queries against Postgres, Req clients in a test project, Tailwind builds with the real binary.
@@ -456,6 +464,7 @@ For existing users:
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.6.1 | 2026-10-16 | Skill-trigger evals; sharper descriptions for three skills that missed short requests |
 | v2.6.0 | 2026-10-15 | Five new skills (scopes/generators, Tailwind/daisyUI, migrations safety, query performance, Req), CI, Codex plugin install |
 | v2.5.1 | 2026-10-15 | OpenAI Codex support for the skills (manifest + installer) |
 | v2.5.0 | 2026-10-15 | Full re-verification against Elixir 1.20 / Phoenix 1.8.15 / LiveView 1.2 / Ecto 3.14 / Oban 2.24 — scoped contexts, security fixes, changed-lines-only hooks with block/review tiers |
@@ -482,7 +491,8 @@ Install using any of the three methods in README.md. No migration needed.
 
 ---
 
-[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/j-morgan6/elixir-phoenix-guide/compare/v2.4.0...v2.5.0

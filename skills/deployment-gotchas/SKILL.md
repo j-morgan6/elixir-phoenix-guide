@@ -93,6 +93,8 @@ Run it as a pre-deploy step (a release command, init container or job) **before*
 | Drop a column | Stop reading it (remove it from the schema) → deploy → drop it in the next deploy |
 | Add an index on a big table | `create index(..., concurrently: true)` with `@disable_ddl_transaction true` and `@disable_migration_lock true` |
 
+The exact migration code for each row (including `NOT NULL` without a full-table scan and `lock_timeout`) is in the `ecto-migrations-safety` skill.
+
 Don't run migrations from `Application.start/2`. Every node would race to run them on boot.
 
 ---
@@ -151,7 +153,7 @@ COPY rel rel
 RUN mix release
 ```
 
-`mix assets.deploy` runs `tailwind` and `esbuild` with `--minify`, then `phx.digest`, which writes the `priv/static/cache_manifest.json` that `prod.exs` points the endpoint at.
+`mix assets.deploy` runs `tailwind` and `esbuild` with `--minify`, then `phx.digest`, which writes the `priv/static/cache_manifest.json` that `prod.exs` points the endpoint at. Compiling first matters for CSS too: `app.css` imports the `phoenix-colocated` CSS that `mix compile` writes (see the `phoenix-tailwind-daisyui` skill).
 
 ---
 

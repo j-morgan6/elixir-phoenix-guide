@@ -129,7 +129,9 @@ def perform(%Oban.Job{args: %{"user_id" => user_id}}) do
 end
 ```
 
-The worker above checks `welcome_sent_at` and `Accounts.deliver_welcome/1` sets it after sending. For external APIs that support it, send an idempotency key that stays the same across retries, e.g. `headers: [{"idempotency-key", "charge-order-#{order.id}"}]`, so a retry after a timeout can't charge twice.
+The worker above checks `welcome_sent_at` and `Accounts.deliver_welcome/1` sets it after sending. For external APIs that support it, send an idempotency key that stays the same across retries, e.g. `headers: [{"idempotency-key", "order-#{order.id}-charge"}]`, so a retry after a timeout can't charge twice.
+
+Long data backfills that outgrow a migration fit a self-re-enqueuing batch worker; see the `ecto-migrations-safety` skill for the batching query.
 
 ## Uniqueness
 
@@ -197,7 +199,7 @@ end
 ```
 
 - **SSRF:** a URL from args can point at internal services or cloud metadata. Check the host against an allowlist and disable redirects (`redirect: false`), which could otherwise leave the allowlist.
-- **`retry: false`:** Req retries GET requests on 408/429/5xx and transport errors by default (3 retries), multiplying Oban's own attempts and blocking the queue slot.
+- **`retry: false`:** Req retries GET/HEAD requests on 408/429/500/502/503/504 and transport errors by default (3 retries, sleeping for an uncapped `Retry-After`), multiplying Oban's own attempts and blocking the queue slot. For the client module itself (Req options, timeouts, capping Retry-After, Req.Test wiring), see the `http-clients-req` skill.
 - **Match every status:** a `case` without a fallback clause raises `CaseClauseError` on the first unexpected status.
 - **Snoozes (2.24):** a snooze no longer consumes an attempt, so `max_attempts` can't stop a job that keeps snoozing, and `attempt`-based delays stay constant. Count snoozes with `meta["snoozed"]` and stop after a limit. `{:snooze, period}` accepts seconds or `{5, :minutes}`.
 

@@ -52,7 +52,7 @@ When v2 is needed, add `scope "/api/v2", MyAppWeb.API.V2` and put only the contr
 
 ## Controller (generator shape, scoped)
 
-`phx.gen.json` with scopes generates exactly this shape. `get_post!/2` raises `Ecto.NoResultsError`, which `phoenix_ecto` turns into a 404 rendered by `ErrorJSON` — for another user's post as well as a missing one.
+`phx.gen.json` with scopes generates exactly this shape. `get_post!/2` raises `Ecto.NoResultsError`, which `phoenix_ecto` turns into a 404 rendered by `ErrorJSON` — for another user's post as well as a missing one. Generated scoped controllers and their tests assume a pipeline that assigns `:current_scope`; see the `phoenix-scopes-and-generators` skill.
 
 ```elixir
 defmodule MyAppWeb.API.V1.PostController do
@@ -163,6 +163,8 @@ To render an association (say the author of a post in a shared feed), the schema
 ```elixir
 defp author(%MyApp.Accounts.User{} = user), do: %{id: user.id, email: user.email}
 ```
+
+Choosing preload strategies and spotting N+1 queries: see the `ecto-queries-performance` skill.
 
 List exactly the fields you expose. Never encode a schema struct directly (`@derive Jason.Encoder` without `only:`): the next field someone adds (`hashed_password`, `role`) ships to clients.
 

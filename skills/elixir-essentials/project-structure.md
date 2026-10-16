@@ -90,7 +90,7 @@ my_app/
 └── mix.exs                          # Deps and aliases (setup, assets.build, assets.deploy)
 ```
 
-There is no `tailwind.config.js` in Phoenix 1.8: Tailwind v4 is configured in `assets/css/app.css`. Both tailwind and esbuild run as Mix deps (no Node required) via `config :tailwind` / `config :esbuild` and the dev watchers.
+There is no `tailwind.config.js` in Phoenix 1.8: Tailwind v4 is configured in `assets/css/app.css`. Both tailwind and esbuild run as Mix deps (no Node required) via `config :tailwind` / `config :esbuild` and the dev watchers. See the `phoenix-tailwind-daisyui` skill for `@source`, daisyUI themes and dynamic class names.
 
 ## Context Boundaries
 

@@ -26,12 +26,18 @@ defmodule EPG.CheckSnippets do
     {~r/text_to_html/, "removed in phoenix_html 4"},
     {~r/<\.label[\s>]/, "Phoenix 1.8 core_components has no label/1"},
     {~r/<\.simple_form/, "simple_form was removed from 1.8 core_components"},
-    {~r/<:actions>/, "<.form> has no :actions slot; put <.button> inside the form"},
     {~r/Repo\.transaction\(/, "use Repo.transact/2 (Ecto 3.13+)"},
     {~r/~p"\/(login|register)"/, "Phoenix 1.8 auth routes are /users/log-in and /users/register"},
     {~r/live_redirect\(|live_patch\(|<\.live_(redirect|patch)/, "removed; use <.link navigate/patch> or push_navigate/push_patch"},
     {~r/<%= for /, "use the :for attribute"},
     {~r/config :logger, :console/, "ignored when :default_formatter is set (Phoenix 1.8 config)"}
+  ]
+
+  # {regex, message}. Checked against each whole elixir/heex block body.
+  @forbidden_in_block [
+    # <.header> has a real :actions slot; only <.form> lacks one.
+    {~r/<\.form\b(?:(?!<\/\.form>).)*<:actions>/s,
+     "<.form> has no :actions slot; put <.button> inside the form"}
   ]
 
   def run([root]) do
@@ -76,6 +82,12 @@ defmodule EPG.CheckSnippets do
           error = check_block(lang, body, heex?),
           do: "#{rel}:#{start}: #{lang} block does not parse: #{error}"
 
+    block_pattern_errors =
+      for {lang, start, body} <- blocks,
+          {re, msg} <- @forbidden_in_block,
+          Regex.match?(re, body),
+          do: "#{rel}:#{start}: #{lang} block: #{msg}"
+
     pattern_errors =
       for {line, n} <- Enum.with_index(lines, 1),
           Enum.any?(code_ranges, &(n in &1)),
@@ -84,7 +96,7 @@ defmodule EPG.CheckSnippets do
           Regex.match?(re, line),
           do: "#{rel}:#{n}: #{msg}: #{String.trim(line)}"
 
-    block_errors ++ pattern_errors
+    block_errors ++ block_pattern_errors ++ pattern_errors
   end
 
   # Returns {[{lang, start_line, body}], [bad_line_range], [code_line_range]}.

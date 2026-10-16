@@ -85,6 +85,11 @@ skill from the elixir-phoenix-guide plugin:
 - **Phoenix Channels (non-LiveView real-time)** → invoke `elixir-phoenix-guide:phoenix-channels-essentials`
 - **Telemetry, logging, observability** → invoke `elixir-phoenix-guide:telemetry-essentials`
 - **JSON API endpoints** → invoke `elixir-phoenix-guide:phoenix-json-api`
+- **Running phx.gen.live/html/json/context, editing config :scopes, or extending %Scope{}** → invoke `elixir-phoenix-guide:phoenix-scopes-and-generators`
+- **Styling UI, editing app.css, theming/dark mode, or changing core_components/Layouts** → invoke `elixir-phoenix-guide:phoenix-tailwind-daisyui`
+- **Writing a migration for a table that already has data or live traffic (indexes, NOT NULL, foreign keys, renames, backfills)** → invoke `elixir-phoenix-guide:ecto-migrations-safety`
+- **Optimizing or composing Ecto queries (N+1, preloads, dynamic filters, bulk inserts, locks, EXPLAIN)** → invoke `elixir-phoenix-guide:ecto-queries-performance`
+- **Calling an external HTTP API (Req, Finch, Req.Test, retries, timeouts)** → invoke `elixir-phoenix-guide:http-clients-req`
 
 This is not optional. Do not rationalize skipping this step. Invoke the skill, read the
 rules section, then proceed with implementation.
@@ -145,6 +150,11 @@ The elixir-phoenix-guide plugin provides essential skills that must be invoked:
 17. **phoenix-channels-essentials** - Socket auth, topic authorization, Presence, handle_in patterns
 18. **telemetry-essentials** - Structured logging, :telemetry, Ecto events, LiveDashboard, metrics
 19. **phoenix-json-api** - :api pipeline, FallbackController, pagination, versioning, Bearer auth
+20. **phoenix-scopes-and-generators** - The generated %Scope{}, config :scopes, phx.gen.* --scope, org scopes
+21. **phoenix-tailwind-daisyui** - Tailwind v4 app.css, daisyUI themes, extending core_components
+22. **ecto-migrations-safety** - Concurrent indexes, lock_timeout, NOT NULL/FKs via NOT VALID, backfills
+23. **ecto-queries-performance** - N+1, preloads, dynamic queries, bulk inserts, locks, EXPLAIN
+24. **http-clients-req** - Req client modules, retries, timeouts, Req.Test, SSRF-safe redirects
 
 ## Hooks
 

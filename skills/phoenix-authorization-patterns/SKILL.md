@@ -44,6 +44,8 @@ end
 
 The `true = ...` match crashes on a mismatch — correct when the caller should already have loaded the post through `get_post!/2`; a crash there means a bug, not a user error.
 
+A repo-level `prepare_query/3` guard for multi-tenant `org_id` filtering is in the `ecto-queries-performance` skill.
+
 ### Mass assignment: ownership comes from the scope
 
 The generator's changeset never casts the owner; it sets it from the scope:
@@ -129,59 +131,9 @@ end
 
 ## Roles and Orgs on the Scope
 
-Extend the generated struct; keep `for_user/1` (it still returns `nil` for guests).
+Extend the generated struct with `org` and `org_role` (plus a `put_org/3` builder) and keep `for_user/1`, which still returns `nil` for guests. Fill those fields once, after authentication, from a membership lookup through the current scope (`Orgs.get_membership(scope, slug)`), never from a param or a cast field. Do it in both an `on_mount` hook (websocket mount and live navigation) and a plug (HTTP render and controllers). Org-owned queries then filter on `scope.org.id`, and policies match on `org_role` (below).
 
-```elixir
-defmodule MyApp.Accounts.Scope do
-  alias MyApp.Accounts.User
-  alias MyApp.Orgs.Org
-
-  defstruct user: nil, org: nil, org_role: nil
-
-  def for_user(%User{} = user), do: %__MODULE__{user: user}
-  def for_user(nil), do: nil
-
-  def put_org(%__MODULE__{} = scope, %Org{} = org, role) do
-    %{scope | org: org, org_role: role}
-  end
-end
-```
-
-Fill it after authentication, from a membership lookup — never from a param or a cast field:
-
-```elixir
-defmodule MyAppWeb.OrgHooks do
-  use MyAppWeb, :verified_routes
-
-  alias MyApp.Accounts.Scope
-  alias MyApp.Orgs
-
-  def on_mount(:assign_org, %{"org_slug" => slug}, _session, socket) do
-    scope = socket.assigns.current_scope
-
-    # returns the caller's %Membership{org: org, role: role}, or nil
-    case Orgs.get_membership(scope, slug) do
-      %{org: org, role: role} ->
-        {:cont, Phoenix.Component.assign(socket, :current_scope, Scope.put_org(scope, org, role))}
-
-      nil ->
-        {:halt,
-         socket
-         |> Phoenix.LiveView.put_flash(:error, "Not found")
-         |> Phoenix.LiveView.redirect(to: ~p"/")}
-    end
-  end
-end
-```
-
-```elixir
-live_session :org,
-  on_mount: [{MyAppWeb.UserAuth, :require_authenticated}, {MyAppWeb.OrgHooks, :assign_org}] do
-  live "/orgs/:org_slug/projects", ProjectLive.Index, :index
-end
-```
-
-Put this `live_session` in a `scope` that pipes through `[:browser, :require_authenticated_user]`, and give controllers an equivalent plug. Org-owned queries then filter on `scope.org.id`. To make `phx.gen.live`/`phx.gen.context` generate org-scoped code, add an entry to `config :my_app, :scopes` (same keys as the generated `user` entry: `module`, `assign_key`, `access_path: [:org, :id]`, `schema_key: :org_id`, ...) and pass `--scope org`.
+The struct, the plug and hook, the router wiring, the `config :my_app, :scopes` entry for `--scope org` and the test helpers generated code expects are in the `phoenix-scopes-and-generators` skill.
 
 A global role (site admin) belongs on the user as a non-cast field (see the `phoenix-auth-customization` skill) and is read as `scope.user.role`.
 

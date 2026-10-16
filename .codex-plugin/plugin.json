@@ -1,6 +1,6 @@
 {
   "name": "elixir-phoenix-guide",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Elixir and Phoenix development guide: skills checked against Phoenix 1.8 generators for idiomatic, secure Elixir, LiveView, Ecto, OTP and Oban code",
   "author": {
     "name": "Joseph Morgan",

@@ -1,6 +1,6 @@
 ---
 name: ecto-changeset-patterns
-description: "Use when a schema needs more than one changeset (registration vs update), conditional validation, field transforms, password/email rules, or uniqueness checks. Not for parent/child forms or cast_assoc (use ecto-nested-associations)."
+description: "Use when writing Ecto changeset validations beyond cast/validate_required — custom and cross-field validations (e.g. end date after start date), separate changesets per operation (registration vs update), conditional validation, field transforms, password/email rules, uniqueness checks. Not for parent/child forms or cast_assoc (use ecto-nested-associations)."
 ---
 
 # Ecto Changeset Patterns

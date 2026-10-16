@@ -1,6 +1,6 @@
 ---
 name: elixir-essentials
-description: "Use when writing or refactoring plain Elixir — pattern matching, with/case, {:ok, _}/{:error, _} contracts, modern Elixir 1.18+ features, Phoenix project layout. Not for OTP, Ecto, LiveView or tests (use the specific skill)."
+description: "Use when writing, refactoring or reviewing any Elixir code, even a small function or a quick question about idioms — replacing nested if/case with pattern matching and guards, chaining {:ok, _}/{:error, _} steps with `with`, modern Elixir 1.18+ (type checker, JSON, dbg), Phoenix project layout. Not for OTP, Ecto, LiveView or tests (use the specific skill)."
 ---
 
 # Elixir Essentials
